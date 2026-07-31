@@ -1,0 +1,41 @@
+{
+  "name": "@dm-life/web-collab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:e2e": "node e2e/smoke.mjs"
+  },
+  "dependencies": {
+    "@dm-life/server": "file:../server",
+    "@dm-life/shared": "file:../shared",
+    "@dnd-kit/core": "^6.1.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@tanstack/react-query": "^5.59.0",
+    "@trpc/client": "^11.0.0",
+    "@trpc/react-query": "^11.0.0",
+    "@radix-ui/react-dialog": "^1.1.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.454.0",
+    "mind-elixir": "^5.13.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sonner": "^1.5.0",
+    "tailwind-merge": "^2.5.4",
+    "zod": "^3.23.8",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.7.0",
+    "vite": "^5.4.10"
+  }
+}

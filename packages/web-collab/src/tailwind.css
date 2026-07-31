@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   个人模式主题令牌（lc- 前缀，与联机版 --accent 等 hex 令牌隔离）。
+   颜色以「RGB 通道三元组」存储（空格分隔），由 Tailwind 的
+   rgb(var(--lc-x) / <alpha-value>) 组装，透明度修饰（/50、/40…）可用，
+   整站随 .dark 类翻转。默认（html 不带 .dark）= 浅色；html.dark = 深色。
+   令牌数值 1:1 复制自 packages/web/src/index.css。
+   ============================================================ */
+
+/* 浅色主题 */
+:root {
+  color-scheme: light;
+  --lc-bg-base: 244 246 251; /* #f4f6fb */
+  --lc-bg-panel: 255 255 255; /* #ffffff */
+  --lc-bg-raised: 238 241 247; /* #eef1f7 */
+  --lc-bg-border: 219 225 236; /* #dbe1ec */
+  --lc-accent: 47 107 255; /* #2f6bff（浅底上更深以保证对比）*/
+  --lc-bg-soft: rgba(15, 23, 42, 0.04);
+  --lc-fg: 31 41 55; /* #1f2937 */
+  --lc-scroll-thumb: 203 213 225;
+  --lc-gray-100: 17 24 39;
+  --lc-gray-200: 31 41 55;
+  --lc-gray-300: 55 65 81;
+  --lc-gray-400: 75 85 99;
+  --lc-gray-500: 107 114 128;
+  --lc-gray-600: 156 163 175;
+  --lc-gray-700: 75 85 99;
+  --lc-gray-800: 51 65 85;
+  --lc-gray-900: 31 41 55;
+  /* 语义/状态色：浅色模式用「深色档」保证对比（原本 Tailwind 浅档在浅底几乎不可见）。
+     全档位都做主题感知，避免任何 text-<color>-<shade> 在浅底不可读（#308 彻查修复）。 */
+  --lc-emerald-100: 5 70 50;
+  --lc-emerald-200: 5 95 70;
+  --lc-emerald-300: 4 120 87;
+  --lc-emerald-400: 5 150 105;
+  --lc-emerald-500: 4 110 78;
+  --lc-emerald-600: 6 78 59;
+  --lc-amber-100: 161 98 7;
+  --lc-amber-200: 180 83 9;
+  --lc-amber-300: 180 83 9;
+  --lc-amber-400: 217 119 6;
+  --lc-amber-500: 180 83 9;
+  --lc-amber-600: 146 64 14;
+  --lc-red-100: 185 28 28;
+  --lc-red-200: 185 28 28;
+  --lc-red-300: 220 38 38;
+  --lc-red-400: 220 38 38;
+  --lc-red-500: 220 38 38;
+  --lc-red-600: 153 27 27;
+  --lc-rose-100: 190 18 60;
+  --lc-rose-200: 190 18 60;
+  --lc-rose-300: 225 29 72;
+  --lc-rose-400: 225 29 72;
+  --lc-rose-500: 225 29 72;
+  --lc-rose-600: 159 18 57;
+  --lc-sky-100: 7 89 133;
+  --lc-sky-200: 3 105 161;
+  --lc-sky-300: 2 132 199;
+  --lc-sky-400: 2 132 199;
+  --lc-sky-500: 2 132 199;
+  --lc-sky-600: 3 105 161;
+  --lc-yellow-100: 161 98 7;
+  --lc-yellow-200: 161 98 7;
+  --lc-yellow-300: 161 98 7;
+  --lc-yellow-400: 202 138 4;
+  --lc-yellow-500: 202 138 4;
+  --lc-yellow-600: 161 98 7;
+  --lc-blue-100: 30 64 175;
+  --lc-blue-200: 30 64 175;
+  --lc-blue-300: 29 78 216;
+  --lc-blue-400: 29 78 216;
+  --lc-blue-500: 29 78 216;
+  --lc-blue-600: 30 64 175;
+  --lc-cyan-100: 14 116 144;
+  --lc-cyan-200: 14 116 144;
+  --lc-cyan-300: 14 116 144;
+  --lc-cyan-400: 14 116 144;
+  --lc-cyan-500: 8 145 178;
+  --lc-cyan-600: 14 116 144;
+  --lc-green-100: 20 83 45;
+  --lc-green-200: 21 128 61;
+  --lc-green-300: 22 163 74;
+  --lc-green-400: 22 163 74;
+  --lc-green-500: 22 163 74;
+  --lc-green-600: 20 83 45;
+  /* 次要灰：浅色模式加深，提升浅底可读性 */
+  --lc-gray-500: 82 92 110;
+  --lc-gray-600: 71 85 105;
+  /* slate 反转向调色板（浅色）：低档=深色文字、高档=浅色面板，
+     与 .dark 镜像，保证 DomainBalancePage 等用 bg-slate-800/text-slate-200 的页面在浅色下也清晰 */
+  --lc-slate-100: 15 23 42;
+  --lc-slate-200: 30 41 59;
+  --lc-slate-300: 51 65 85;
+  --lc-slate-400: 71 85 105;
+  --lc-slate-500: 100 116 139;
+  --lc-slate-600: 148 163 184;
+  --lc-slate-700: 203 213 225;
+  --lc-slate-800: 226 232 240;
+  --lc-slate-900: 241 245 249;
+}
+
+/* 深色主题 */
+.dark {
+  color-scheme: dark;
+  --lc-bg-base: 11 14 20; /* #0b0e14 */
+  --lc-bg-panel: 17 21 31; /* #11151f */
+  --lc-bg-raised: 22 27 39; /* #161b27 */
+  --lc-bg-border: 34 42 58; /* #222a3a */
+  --lc-accent: 91 140 255; /* #5b8cff */
+  --lc-bg-soft: rgba(255, 255, 255, 0.05);
+  --lc-fg: 230 233 240; /* #e6e9f0 */
+  --lc-scroll-thumb: 34 42 58;
+  --lc-gray-100: 243 244 246;
+  --lc-gray-200: 229 231 235;
+  --lc-gray-300: 203 213 225;
+  --lc-gray-400: 148 163 184;
+  --lc-gray-500: 100 116 139;
+  --lc-gray-600: 71 85 105;
+  --lc-gray-700: 51 65 85;
+  --lc-gray-800: 30 41 59;
+  --lc-gray-900: 15 23 42;
+  /* 语义/状态色：深色模式保持明亮观感，全档位主题感知（#308 彻查修复） */
+  --lc-emerald-100: 209 250 229;
+  --lc-emerald-200: 110 231 183;
+  --lc-emerald-300: 110 231 183;
+  --lc-emerald-400: 52 211 153;
+  --lc-emerald-500: 16 185 129;
+  --lc-emerald-600: 5 150 105;
+  --lc-amber-100: 254 243 199;
+  --lc-amber-200: 253 230 138;
+  --lc-amber-300: 252 211 77;
+  --lc-amber-400: 251 191 36;
+  --lc-amber-500: 245 158 11;
+  --lc-amber-600: 217 119 6;
+  --lc-red-100: 254 226 226;
+  --lc-red-200: 252 165 165;
+  --lc-red-300: 252 165 165;
+  --lc-red-400: 248 113 113;
+  --lc-red-500: 248 113 113;
+  --lc-red-600: 220 38 38;
+  --lc-rose-100: 255 228 230;
+  --lc-rose-200: 254 205 211;
+  --lc-rose-300: 253 164 175;
+  --lc-rose-400: 251 113 133;
+  --lc-rose-500: 251 113 133;
+  --lc-rose-600: 225 29 72;
+  --lc-sky-100: 224 242 254;
+  --lc-sky-200: 186 230 253;
+  --lc-sky-300: 125 211 252;
+  --lc-sky-400: 56 189 248;
+  --lc-sky-500: 14 165 233;
+  --lc-sky-600: 2 132 199;
+  --lc-yellow-100: 254 249 195;
+  --lc-yellow-200: 254 240 138;
+  --lc-yellow-300: 253 224 71;
+  --lc-yellow-400: 250 204 21;
+  --lc-yellow-500: 234 179 8;
+  --lc-yellow-600: 202 138 4;
+  --lc-blue-100: 219 234 254;
+  --lc-blue-200: 191 219 254;
+  --lc-blue-300: 147 197 253;
+  --lc-blue-400: 147 197 253;
+  --lc-blue-500: 96 165 250;
+  --lc-blue-600: 59 130 246;
+  --lc-cyan-100: 207 250 254;
+  --lc-cyan-200: 165 243 252;
+  --lc-cyan-300: 103 232 249;
+  --lc-cyan-400: 34 211 238;
+  --lc-cyan-500: 6 182 212;
+  --lc-cyan-600: 8 145 178;
+  --lc-green-100: 220 252 231;
+  --lc-green-200: 134 239 172;
+  --lc-green-300: 74 222 128;
+  --lc-green-400: 74 222 128;
+  --lc-green-500: 34 197 94;
+  --lc-green-600: 22 163 74;
+  /* slate 反转向调色板（深色）：恢复标准 Tailwind slate，使浅色下变浅的面板/文字回到原本明亮观感 */
+  --lc-slate-100: 241 245 249;
+  --lc-slate-200: 226 232 240;
+  --lc-slate-300: 203 213 225;
+  --lc-slate-400: 148 163 184;
+  --lc-slate-500: 100 116 139;
+  --lc-slate-600: 71 85 105;
+  --lc-slate-700: 51 65 85;
+  --lc-slate-800: 30 41 59;
+  --lc-slate-900: 15 23 42;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* 主题切换时的平滑过渡（不含 transform，避免影响拖拽动画） */
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  body *:not(.cursor-grabbing):not([data-no-theme-transition]) {
+    transition:
+      background-color 0.25s ease,
+      border-color 0.25s ease,
+      color 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+}
+
+/* 细滚动条（个人模式区域） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--lc-scroll-thumb));
+  border-radius: 8px;
+}

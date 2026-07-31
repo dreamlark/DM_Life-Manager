@@ -1,0 +1,26 @@
+# dm-life · 精简部署（单后端）
+# 一个容器、一个端口、零必填配置。镜像内含统一后端(server) + 前端(web-collab) + caddy。
+# 个人模式与协作模式共用同一 server 后端（按家庭隔离数据，注册即自动建个人家庭）。
+# 缺失的 JWT_SECRET 会在首次启动时自动生成并持久化到 ./data。
+#
+# 用法（任意 Docker 主机 / fnOS 项目粘贴本文件）：
+#   1. 同目录建一个空文件夹用于持久化：mkdir -p ./data
+#   2. 启动：docker compose -f docker-compose.simple.yml up -d
+#   3. 浏览器访问 http://<NAS_IP>:8080
+#      （Tailscale 用户可用 http://机器名.ts.net:8080；若已配置自动 HTTPS 则走 https）
+#
+# 升级：docker compose -f docker-compose.simple.yml pull && docker compose -f docker-compose.simple.yml up -d
+# 回滚：镜像同时带 :sha-<commit> 标签，可改 image 指向上一版本 digest。
+
+services:
+  dm-life:
+    image: ghcr.io/dreamlark/dm-life:latest
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    # 可选逃生口（仅纯内网且明确知晓风险时开启）：
+    # environment:
+    #   - DISABLE_HTTPS=1

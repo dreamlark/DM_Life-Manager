@@ -1,0 +1,115 @@
+name: Publish Images to GHCR
+
+# 单后端架构：每次推送到 redesign/streamlined 时，自动把 All-in-One 单镜像
+# （统一后端 server + 前端 web-collab + caddy，零必填配置）构建并推送到
+# GitHub Container Registry（ghcr.io/dreamlark/dm-life），且自动设为公开，
+# 以便家庭 NAS（fnOS 等）无需 git、无需编译，直接匿名拉取运行。
+# 个人模式与协作模式共用同一 server 后端（按家庭隔离数据）。
+#
+# 发布前先跑 verify 门禁（vitest + tsc --noEmit + vite build）：
+# 只有测试 / 类型检查 / 前端构建全绿，才会发布镜像，避免把红构建推成 :latest。
+# 镜像标签以不可变的 :sha-<sha> 为准（可复现）；:latest 仅作“始终为绿”的便利镜像。
+on:
+  push:
+    branches: [redesign/streamlined]
+    paths:
+      - 'packages/**'
+      - 'apps/**'
+      - 'package.json'
+      - 'tsconfig*.json'
+      - 'caddy.auto.conf'
+      - 'docker-entrypoint.sh'
+      - 'Dockerfile.allinone'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ---------- 门禁：测试 + 类型检查 + 前端构建 ----------
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Vitest — engine
+        run: npm run test -w packages/engine
+
+      - name: Vitest — server
+        run: npm run test -w packages/server
+
+      - name: Typecheck — server
+        run: npx tsc --noEmit -p packages/server/tsconfig.json
+
+      - name: Typecheck — web-collab
+        run: npx tsc --noEmit -p packages/web-collab/tsconfig.json
+
+      - name: Build frontend — web-collab
+        run: npm run build -w packages/web-collab
+
+  # ---------- 发布：门禁通过后才构建推送 ----------
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 单镜像 All-in-One：含统一后端(server) + 前端(web-collab) + caddy。
+      # 对应 docs/redesign/ 最终方案 P1 的单后端化改造。
+      # 标签：sha-<sha> 不可变（推荐按此固定版本以保证可复现）；latest 为“始终为绿”的便利镜像。
+      - name: Build & push all-in-one
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.allinone
+          push: true
+          tags: |
+            ghcr.io/dreamlark/dm-life:sha-${{ github.sha }}
+            ghcr.io/dreamlark/dm-life:latest
+
+      # GHCR 包归属 dreamlark 组织，可见性接口必须用 /orgs/dreamlark/...
+      # （/user/... 对组织包会 404）。用仓库 Secrets 里的 PACKAGES_PAT
+      # （dreamlark 组织成员账号、作用域 write:packages）翻转；该 PAT 缺失或
+      # 缺作用域时本步以 continue-on-error 跳过，不阻断镜像发布。
+      - name: Make package public (requires PACKAGES_PAT secret)
+        if: ${{ secrets.PACKAGES_PAT != '' }}
+        continue-on-error: true
+        env:
+          PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
+        run: |
+          echo "Flipping ghcr.io/dreamlark/dm-life visibility -> public"
+          for i in 1 2 3 4 5; do
+            code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -L -X PATCH \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${PACKAGES_PAT}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/dreamlark/packages/container/dm-life/visibility" \
+              -d '{"visibility":"public"}')
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ] || [ "$code" = "204" ]; then echo "Public OK"; break; fi
+            sleep 10
+          done
+          head -c 300 /tmp/resp.json 2>/dev/null; echo

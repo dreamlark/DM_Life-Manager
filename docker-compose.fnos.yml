@@ -1,0 +1,37 @@
+# fnOS / Docker host 部署 —— 单镜像 all-in-one（server + web-collab 前端 + caddy，容器内已含）
+#
+# 镜像：ghcr.io/dreamlark/dm-life:sha-<commit>
+#   - 用钉固标签 :sha-<commit>（由 GitHub Actions 为每个 push 生成，不可变）；
+#     禁止使用 :latest（可被覆盖，回滚/安全全靠不可变标签）。
+#   - 镜像默认【私有】：用带 read:packages 作用域的 PAT `docker login ghcr.io` 后即可拉取。
+#
+# 用法（fnOS 容器 → 项目/Compose 粘贴本文件）：
+#   1. 同目录准备 .env（见 .env.example；JWT_SECRET 可留空，由镜像自动生成并持久化到 /data/.env.auto）。
+#   2. 若 GHCR 包未登录，需先在 NAS 终端 `docker login ghcr.io`。
+#   3. 把下面 image: 的 sha-REPLACE_ME 改成你实际部署的 :sha-<commit>。
+#   4. 启动项目。
+# 访问：http://<NAS 局域网IP 或 Tailscale IP>:8080
+#   （Tailscale 的 WireGuard 已端到端加密，HTTP 在传输层等同安全；
+#    想要浏览器绿锁见镜像内置 caddy 配置的 HTTPS 变体，需先 `tailscale cert`。）
+#
+# 注意（N4 非 root 容器）：server 容器内以 uid 1000(node) 运行，会向 ./data 写库与
+# 自动密钥(/data/.env.auto)。若启动后报权限错误(EACCES)，在 NAS 终端执行：
+#   chown -R 1000:1000 /vol1/.../docker/data
+# 再 `docker compose -p dm_life up -d` 即可。
+
+services:
+  dm-life:
+    image: ghcr.io/dreamlark/dm-life:sha-REPLACE_ME
+    restart: unless-stopped
+    pull_policy: always
+    environment:
+      - NODE_ENV=production
+      # 个人域 + 账户/家庭/共享 全部走统一后端 server（容器内 4100），caddy 对外 8080
+      - PGLITE_DIR=/data
+      - CORS_ORIGIN=*
+      # 安全必填：强随机 JWT 签名密钥；留空则由镜像首次启动自动生成并持久化到 /data/.env.auto
+      - JWT_SECRET=${JWT_SECRET:-}
+    volumes:
+      - ./data:/data
+    ports:
+      - "8080:8080"

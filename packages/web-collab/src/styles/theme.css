@@ -1,0 +1,76 @@
+/*
+ * dm-life 统一主题令牌（最终方案 P1 · UI 收敛）
+ * -------------------------------------------------------------
+ * 这是「个人模式」与「协作模式」共用的单一主题真相源。
+ * 目的：让两套界面在视觉上保持一致（解决"个人与协作 UI 风格不一致"）。
+ *
+ * 设计约束（安全生产）：
+ *  - 只【新增】中性 UI 令牌（--surface / --hairline / --brand-* 等），供统一外壳 AppTopBar 使用；
+ *    不覆盖现有 --accent / --lc-*，避免破坏既有组件渲染。
+ *  - --brand 与既有 --accent 取同一色相，保证统一外壳与业务组件配色同源。
+ */
+
+:root {
+  /* 统一品牌色（与 styles.css 的 --accent 同色相 #4f46e5） */
+  --brand: #4f46e5;
+  --brand-2: #db2777;
+  --brand-soft: rgba(79, 70, 229, 0.12);
+
+  /* 统一外壳中性令牌（深浅两主题各一版，结构一致） */
+  --surface: rgba(255, 255, 255, 0.7);
+  --surface-raised: rgba(255, 255, 255, 0.85);
+  --hairline: rgba(30, 34, 53, 0.1);
+  --text-strong: #1e2235;
+  --text-muted: #6b7186;
+  --shell-shadow: 0 16px 40px -22px rgba(40, 50, 110, 0.35);
+}
+
+.dark {
+  --brand: #818cf8;
+  --brand-2: #f472b6;
+  --brand-soft: rgba(129, 140, 248, 0.16);
+
+  --surface: rgba(28, 34, 64, 0.55);
+  --surface-raised: rgba(40, 48, 82, 0.7);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --text-strong: #eef1ff;
+  --text-muted: #6f779b;
+  --shell-shadow: 0 20px 48px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* 统一外壳基础样式（供 AppTopBar 使用，纯中性令牌，跨模式一致） */
+.dm-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.dm-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  backdrop-filter: blur(18px) saturate(180%);
+  border-bottom: 1px solid var(--hairline);
+  box-shadow: var(--shell-shadow);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.dm-topbar-left,
+.dm-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dm-brand {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-strong);
+  letter-spacing: 0.2px;
+}
+.dm-who {
+  font-size: 13px;
+  color: var(--text-muted);
+}

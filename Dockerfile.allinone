@@ -1,0 +1,68 @@
+# dm-life All-in-One 镜像：单容器内含统一后端(server) + 前端(web-collab) + caddy。
+# 构建上下文 = 仓库根（compose 指定 context: .），故 COPY 为根相对路径。
+# 设计目标：一个镜像、一个端口(8080)、零必填配置（密钥自动生成）。
+# 个人模式与协作模式共用同一 server 后端（按家庭隔离数据）。
+
+# ---------- 构建阶段 ----------
+FROM node:22-slim AS build
+WORKDIR /app
+
+# 根配置先入层（轻量、变动少、缓存命中率高）
+COPY package.json tsconfig.base.json ./
+
+# 全量复制 workspaces 源码：npm workspaces 要求每个声明的 workspace 目录存在且含有效
+# package.json，仅复制 package.json 不足以让 npm 识别成员，会导致 @dm-life/* 被当外部包 → 404。
+COPY packages ./packages
+COPY apps ./apps
+
+# 删除 Windows 锁文件并重装：Windows lockfile 记录 win32 原生二进制，linux 容器需 linux-x64
+# 版本；带着它跑 npm install 会触发 npm/cli#4828（esbuild 原生二进制缺失 → 启动即崩）。
+# 仓库锁文件保留给本地 Windows 开发用，不参与 Docker 构建。
+RUN rm -f package-lock.json && npm install --include=dev
+
+# 构建前端静态资源
+RUN npm run build -w packages/web-collab
+
+# ---------- 运行阶段 ----------
+FROM node:22-slim
+
+ENV NODE_ENV=production \
+    PORT=8080 \
+    HOST=0.0.0.0 \
+    DM_LIFE_DATA_DIR=/data
+
+WORKDIR /app
+
+# caddy 提供反向代理 + 静态托管 + 自动证书能力
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends caddy \
+ && rm -rf /var/lib/apt/lists/*
+
+# 依赖与源码（engine/server 经 tsx 运行源码，需完整 workspace）
+COPY package.json tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
+# 复用构建阶段已装好的 node_modules（含 dev 依赖 tsx/esbuild 的 linux 原生二进制）
+COPY --from=build /app/node_modules ./node_modules
+# 前端构建产物
+COPY --from=build /app/packages/web-collab/dist ./packages/web-collab/dist
+
+# 内置 caddy 配置 + 编排器
+COPY caddy.auto.conf /etc/caddy/Caddyfile
+COPY apps/allinone/index.mjs ./apps/allinone/index.mjs
+
+# 入口：以 root 修正 /data 卷归属后降权到 node 运行（见 docker-entrypoint.sh）
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+VOLUME ["/data"]
+EXPOSE 8080
+
+# N4：编排器经 docker-entrypoint.sh 以 root 修正 /data 归属后，用 runuser 降权到
+# node(uid 1000) 运行，保持非 root 最小化影响面。/data 由 compose 挂载宿主机卷，
+# 宿主机 ./data 常为 root 所有，故必须在入口处 chown，否则编排器写 /data/.env.auto
+# 会 EACCES 崩溃（已在生产实跑中复现并修复）。
+RUN chown -R node:node /app && mkdir -p /data && chown -R node:node /data
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["node", "apps/allinone/index.mjs"]
