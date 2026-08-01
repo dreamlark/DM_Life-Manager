@@ -1106,9 +1106,24 @@ export const store = {
       .orderBy(desc(tasks.importance), asc(sql`coalesce(${tasks.scheduledStart}, ${tasks.createdAt})`));
     return rows.map(taskRowToView);
   },
-  async listAllTasks(familyId: string): Promise<TaskView[]> {
+  // S9（A04/D）：支持分页上限，避免无上限全表拉取打满内存
+  async listAllTasks(familyId: string, limit?: number, offset = 0): Promise<TaskView[]> {
     const db = getDb();
-    const rows = await db.select().from(tasks).where(resolveZone(tasks, familyId)).orderBy(asc(tasks.scheduledStart), asc(tasks.createdAt));
+    const base = db
+      .select()
+      .from(tasks)
+      .where(resolveZone(tasks, familyId))
+      .orderBy(asc(tasks.scheduledStart), asc(tasks.createdAt));
+    // drizzle 的 fluent builder 在 .limit()/.offset() 后会收窄类型，不能用 let 重赋值，故用三元表达式构造最终查询
+    const q =
+      typeof limit === 'number'
+        ? offset > 0
+          ? base.limit(limit).offset(offset)
+          : base.limit(limit)
+        : offset > 0
+          ? base.offset(offset)
+          : base;
+    const rows = await q;
     return rows.map(taskRowToView);
   },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

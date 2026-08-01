@@ -21,27 +21,28 @@ afterAll(async () => {
 
 describe('M2.1 鉴权 + 家庭 + RBAC', () => {
   it('注册并登录，返回双令牌', async () => {
-    const reg = await anon().auth.register({ email: 'alice@home.dev', name: 'Alice', password: 'secret1' });
+    const reg = await anon().auth.register({ email: 'alice@home.dev', name: 'Alice', password: 'secret123' });
     expect(reg.user.email).toBe('alice@home.dev');
     expect(reg.accessToken).toBeTruthy();
     expect(reg.refreshToken).toBeTruthy();
-    const login = await anon().auth.login({ email: 'alice@home.dev', password: 'secret1' });
+    const login = await anon().auth.login({ email: 'alice@home.dev', password: 'secret123' });
     expect(login.accessToken).toBeTruthy();
   });
 
   it('重复注册邮箱冲突', async () => {
-    await anon().auth.register({ email: 'dup@home.dev', name: 'D', password: 'secret1' });
-    await expect(anon().auth.register({ email: 'dup@home.dev', name: 'D2', password: 'secret1' })).rejects.toThrow(/已注册/);
+    await anon().auth.register({ email: 'dup@home.dev', name: 'D', password: 'secret123' });
+    // S6（A07）：重复邮箱不再返回「已注册」这类可枚举文案，改为通用「注册失败」，避免邮箱枚举
+    await expect(anon().auth.register({ email: 'dup@home.dev', name: 'D2', password: 'secret123' })).rejects.toThrow(/注册失败/);
   });
 
   it('完整链路：建家庭 → 邀请 child → 接受 → 成员列表见两人', async () => {
-    const alice = await anon().auth.register({ email: 'a2@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'a2@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
 
     const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'child' });
     expect(inv.role).toBe('child');
 
-    const bob = await anon().auth.register({ email: 'bob@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'bob@home.dev', name: 'Bob', password: 'secret123' });
     const accepted = await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
     expect(accepted.role).toBe('child');
     expect(accepted.familyId).toBe(family.id);
@@ -52,11 +53,11 @@ describe('M2.1 鉴权 + 家庭 + RBAC', () => {
   });
 
   it('child 越权邀请成员被 FORBIDDEN', async () => {
-    const alice = await anon().auth.register({ email: 'a3@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'a3@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
     const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'member' });
 
-    const bob = await anon().auth.register({ email: 'bob3@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'bob3@home.dev', name: 'Bob', password: 'secret123' });
     await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
 
     await expect(asUser(bob.user.id).families.invite({ familyId: family.id, role: 'child' })).rejects.toThrow(
@@ -65,23 +66,23 @@ describe('M2.1 鉴权 + 家庭 + RBAC', () => {
   });
 
   it('非家庭成员查看成员列表被 FORBIDDEN', async () => {
-    const alice = await anon().auth.register({ email: 'a4@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'a4@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
 
-    const stranger = await anon().auth.register({ email: 'stranger@home.dev', name: 'X', password: 'secret1' });
+    const stranger = await anon().auth.register({ email: 'stranger@home.dev', name: 'X', password: 'secret123' });
     await expect(asUser(stranger.user.id).families.members({ familyId: family.id })).rejects.toThrow(/FORBIDDEN|不是该家庭/);
   });
 
   it('refresh 旋转出新令牌', async () => {
-    await anon().auth.register({ email: 'a5@home.dev', name: 'Alice', password: 'secret1' });
-    const login = await anon().auth.login({ email: 'a5@home.dev', password: 'secret1' });
+    await anon().auth.register({ email: 'a5@home.dev', name: 'Alice', password: 'secret123' });
+    const login = await anon().auth.login({ email: 'a5@home.dev', password: 'secret123' });
     const rotated = await anon().auth.refresh({ refreshToken: login.refreshToken });
     expect(rotated.accessToken).toBeTruthy();
     expect(rotated.refreshToken).not.toBe(login.refreshToken);
   });
 
   it('家庭所有者不能离开', async () => {
-    const alice = await anon().auth.register({ email: 'a6@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'a6@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
     await expect(asUser(alice.user.id).families.leave({ familyId: family.id })).rejects.toThrow(/不能直接离开|转让|解散/);
   });
@@ -98,8 +99,8 @@ describe('M2.1 鉴权 + 家庭 + RBAC', () => {
   });
 
   it('rememberMe 控制 refresh 有效期：false≈1天，true≈30天', async () => {
-    const short = await anon().auth.register({ email: 'short@home.dev', name: 'S', password: 'secret1', rememberMe: false });
-    const long = await anon().auth.register({ email: 'long@home.dev', name: 'L', password: 'secret1', rememberMe: true });
+    const short = await anon().auth.register({ email: 'short@home.dev', name: 'S', password: 'secret123', rememberMe: false });
+    const long = await anon().auth.register({ email: 'long@home.dev', name: 'L', password: 'secret123', rememberMe: true });
 
     const sShort = await store.getSession(short.refreshToken);
     const sLong = await store.getSession(long.refreshToken);

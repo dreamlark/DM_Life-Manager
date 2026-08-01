@@ -62,6 +62,8 @@ export const sessions = pgTable(
   },
   (t) => ({
     refreshIdx: index('sessions_refresh_idx').on(t.refreshToken),
+    // S9（A04）：按 userId 吊销/查询会话（logoutAll / 列出某用户会话）
+    userIdx: index('sessions_user_idx').on(t.userId),
   }),
 );
 
@@ -93,6 +95,8 @@ export const calendarEvents = pgTable(
     zoneIdx: index('calendar_events_zone_idx').on(t.ownerId, t.visibility),
     versionIdx: index('calendar_events_version_idx').on(t.version),
     startIdx: index('calendar_events_start_idx').on(t.familyId, t.startAt),
+    // S9（A04）：(familyId, visibility) 复合索引，加速「某家庭公开事件」列表查询
+    familyVisIdx: index('calendar_events_family_vis_idx').on(t.familyId, t.visibility),
   }),
 );
 
@@ -486,6 +490,8 @@ export const reminderClocks = pgTable(
   (t) => ({
     familyIdx: index('reminder_fire_idx').on(t.ownerId, t.visibility, t.nextFireAt, t.status),
     versionIdx: index('reminder_version_idx').on(t.version),
+    // S9（A04）：按 next_fire_at 单独建索引，加速 tick 全量到期扫描
+    nextFireIdx: index('reminder_next_fire_idx').on(t.nextFireAt),
   }),
 );
 

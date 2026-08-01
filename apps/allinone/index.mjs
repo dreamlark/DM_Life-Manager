@@ -25,14 +25,38 @@ if (existsSync(AUTO_ENV)) {
     if (m) auto[m[1]] = m[2];
   }
 }
-const ensure = (key, gen) => {
-  if (!process.env[key]) {
-    if (!auto[key]) auto[key] = gen();
-    process.env[key] = auto[key];
+// S1（A02/A07）：若 JWT_SECRET / ENGINE_API_TOKEN 缺失或命中弱值，则（重新）生成强随机值并回写 .env.auto。
+function isWeakSecret(s) {
+  if (!s || s.length < 32) return true;
+  if (/CHANGE_ME|insecure|example|password|secret|test|123|changeme/i.test(s)) return true;
+  const uniq = new Set(s.split('')).size;
+  if (uniq < 16) return true;
+  const freq = {};
+  for (const ch of s) freq[ch] = (freq[ch] ?? 0) + 1;
+  let entropy = 0;
+  for (const c of Object.values(freq)) {
+    const p = c / s.length;
+    entropy -= p * Math.log2(p);
   }
-};
-ensure('JWT_SECRET', () => randomBytes(48).toString('base64'));
-ensure('ENGINE_API_TOKEN', () => randomBytes(48).toString('base64'));
+  if (entropy < 3.5) return true;
+  return false;
+}
+function genStrong() {
+  return randomBytes(48).toString('base64');
+}
+function ensureSecret(key) {
+  const cur = process.env[key] ?? auto[key];
+  if (!cur || isWeakSecret(cur)) {
+    const strong = genStrong();
+    auto[key] = strong;
+    process.env[key] = strong;
+    console.log(`[allinone] ${key} 缺失或强度不足，已重新生成强随机值并回写 ${AUTO_ENV}`);
+  } else {
+    process.env[key] = cur;
+  }
+}
+ensureSecret('JWT_SECRET');
+ensureSecret('ENGINE_API_TOKEN');
 // 把补齐后的密钥回写，保证重启幂等（已存在则原值不变）。
 // 密钥文件以 0600 写入，避免宿主机卷上其他用户读到 JWT_SECRET / ENGINE_API_TOKEN。
 const out = Object.entries(auto)
@@ -72,7 +96,8 @@ boot('server', 'npm', ['start', '-w', 'packages/server'], {
   NODE_ENV: 'production',
   PORT: '4100',
   PGLITE_DIR: DATA_DIR,
-  CORS_ORIGIN: '*',
+  // S3（A05）：默认不再用 '*'，改指前端真实源（可用 WEB_ORIGIN 覆盖）。同源经 caddy 反代时无需跨域。
+  CORS_ORIGIN: process.env.WEB_ORIGIN || 'http://localhost:5173',
   // F2 修复：caddy 经 localhost 反代到 server，故仅信任来自 127.0.0.1 的 X-Forwarded-For，
   // 使登录/注册限流能拿到真实客户端 IP；直连 4100（无代理）则用 socket 真实地址。
   TRUST_PROXY_IPS: '127.0.0.1',

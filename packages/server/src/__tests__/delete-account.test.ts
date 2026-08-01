@@ -66,7 +66,7 @@ const PERSONAL_TABLES = [
 describe('账户注销（auth.deleteAccount）', () => {
   it('注册→建个人数据→注销→级联清除个人家庭/用户行/个人数据，且旧 refreshToken 失效', async () => {
     // 1) 注册，拿到 userId 与注销前颁发的 refreshToken
-    const reg = await anon().auth.register({ email: 'del@home.dev', name: 'Del', password: 'secret1' });
+    const reg = await anon().auth.register({ email: 'del@home.dev', name: 'Del', password: 'secret123' });
     const userId = reg.user.id;
     const oldRefresh = reg.refreshToken;
 

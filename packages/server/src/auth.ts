@@ -12,9 +12,50 @@ import { store } from './store';
  * - 开发 / 测试环境未设置时，回退到一个确定性的临时密钥并明确告警，仅限本地使用。
  *   该回退密钥稳定，不破坏现有本地与单测链路。
  */
-function resolveJwtSecret(): string {
+// S1（A02/A07）：弱/占位 JWT 密钥检测。生产环境命中则 fail-closed 抛错；非生产仅告警。
+const MIN_SECRET_LEN = 32;
+const WEAK_SECRET_RE = /CHANGE_ME|insecure|example|password|secret|test|123|changeme/i;
+
+export function isWeakJwtSecret(s: string): { weak: boolean; reason?: string } {
+  if (s.length < MIN_SECRET_LEN) return { weak: true, reason: `长度不足 ${MIN_SECRET_LEN} 位` };
+  if (WEAK_SECRET_RE.test(s)) return { weak: true, reason: '命中弱密钥/占位值模式' };
+  // 熵启发式：去重字符数过少 或 Shannon 熵过低 → 视为弱（防御形如 aaaaaa… / 12341234 的弱值）
+  const uniq = new Set(s.split('')).size;
+  if (uniq < 16) return { weak: true, reason: '字符多样性不足' };
+  const freq: Record<string, number> = {};
+  for (const ch of s) freq[ch] = (freq[ch] ?? 0) + 1;
+  const len = s.length;
+  let entropy = 0;
+  for (const c of Object.values(freq)) {
+    const p = c / len;
+    entropy -= p * Math.log2(p);
+  }
+  if (entropy < 3.5) return { weak: true, reason: '熵过低' };
+  return { weak: false };
+}
+
+export function resolveJwtSecret(): string {
   const fromEnv = process.env.JWT_SECRET;
-  if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
+  if (fromEnv && fromEnv.trim().length > 0) {
+    const secret = fromEnv.trim();
+    const { weak, reason } = isWeakJwtSecret(secret);
+    if (process.env.NODE_ENV === 'production') {
+      if (weak) {
+        throw new Error(
+          `JWT_SECRET 强度不足（${reason}）：生产环境必须使用强随机密钥（例如 \`openssl rand -base64 48\`），` +
+            '已拒绝启动以防止使用弱密钥伪造令牌。请在启动 engine/server 前通过环境变量注入强 JWT_SECRET。',
+        );
+      }
+      return secret;
+    }
+    // 非生产：弱密钥仅告警，不阻断（便于本地开发），但绝不应用于任何可被访问的环境
+    if (weak) {
+      console.warn(
+        `[auth] 警告：JWT_SECRET 强度不足（${reason}），仅限本地/测试使用，切勿用于任何可访问的环境。`,
+      );
+    }
+    return secret;
+  }
   if (process.env.NODE_ENV === 'production') {
     throw new Error(
       '缺少环境变量 JWT_SECRET：生产环境必须设置强随机密钥（例如 `openssl rand -base64 48`），' +
@@ -45,7 +86,8 @@ export function signAccess(userId: string): string {
 
 /** 解析 access token，返回 userId；失败抛错 */
 export function verifyAccess(token: string): string {
-  const payload = jwt.verify(token, JWT_SECRET) as { sub: string; typ?: string };
+  // S8（A08/A02）：固定算法为 HS256，拒绝 alg=none 或 RS*/ES* 等算法降级攻击
+  const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { sub: string; typ?: string };
   if (payload.typ && payload.typ !== 'access') throw new Error('invalid token type');
   return payload.sub;
 }

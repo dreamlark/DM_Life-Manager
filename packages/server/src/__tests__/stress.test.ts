@@ -11,7 +11,7 @@ import type { AuthContext } from '../rbac';
 const anon = (ip?: string) => appRouter.createCaller({ userId: null, ip } as AuthContext);
 const asUser = (userId: string, ip?: string) => appRouter.createCaller({ userId, ip } as AuthContext);
 
-async function register(email: string, password = 'secret1') {
+async function register(email: string, password = 'secret123') {
   const reg = await anon().auth.register({ email, name: 'u', password });
   return { userId: reg.user.id, me: asUser(reg.user.id) };
 }

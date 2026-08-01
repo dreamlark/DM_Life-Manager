@@ -17,6 +17,7 @@ import { publishEvent } from './realtime/eventBus';
 import { closeUserSessions } from './realtime/hub';
 import { router, authedProcedure, publicProcedure, t } from './trpc';
 import { personalRouters } from './personal';
+import * as audit from './audit';
 import type { Role, PublicUser, SharedItemModule } from './types';
 
 /* ----------------------------- P1-5 登录限流 -----------------------------
@@ -74,8 +75,19 @@ export function __sweepRateBuckets(): number {
 function rateLimitMiddleware(kind: keyof typeof RATE_CONFIG) {
   const cfg = RATE_CONFIG[kind];
   return t.middleware(({ ctx, next }) => {
-    const bucket = `rl:${kind}:${ctx.ip ?? 'unknown'}`;
-    if (rateLimited(bucket, cfg.limit, cfg.windowMs)) {
+    const ip = ctx.ip;
+    let bucket: string;
+    let effLimit = cfg.limit;
+    if (ip) {
+      bucket = `rl:${kind}:${ip}`;
+    } else {
+      // S12（A07/D）：IP 未知（socket.remoteAddress 缺失）时不退化为可被轻易绕过的单共享桶，
+      // 改为落入最严格全局桶，并施加远低于常规的硬性上限，避免匿名流量绕过限流。
+      bucket = `rl:${kind}:__strict_unknown__`;
+      const unknownLimit = Number(process.env.RATE_UNKNOWN_LIMIT ?? 5);
+      effLimit = Math.min(cfg.limit, unknownLimit);
+    }
+    if (rateLimited(bucket, effLimit, cfg.windowMs)) {
       throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: '尝试过于频繁，请稍后再试' });
     }
     return next();
@@ -83,8 +95,23 @@ function rateLimitMiddleware(kind: keyof typeof RATE_CONFIG) {
 }
 
 const emailSchema = z.string().email('邮箱格式不正确');
-const passwordSchema = z.string().min(6, '密码至少 6 位');
+// S4（A07）：口令最小长度 6 → 8
+const passwordSchema = z.string().min(8, '密码至少 8 位');
 const roleSchema = z.enum(['owner', 'admin', 'member', 'child', 'guest'] as const);
+
+// S7（A04）：快照结构化校验——限制为可 JSON 序列化值且单值体积受控，避免超大载荷打满内存（DoS）。
+// 共享快照为各模块异构结构，不强行规定字段形状（会破坏既有客户端），仅做序列化 + 体积边界校验。
+const SNAPSHOT_MAX_BYTES = Number(process.env.SNAPSHOT_MAX_BYTES ?? 256 * 1024);
+export const snapshotSchema = z.unknown().superRefine((val, ctx) => {
+  const s = JSON.stringify(val);
+  if (s === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: '快照不能为空' });
+    return;
+  }
+  if (s.length > SNAPSHOT_MAX_BYTES) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: '快照体积过大' });
+  }
+});
 
 function toPublic(u: { id: string; email: string; name: string }): PublicUser {
   return { id: u.id, email: u.email, name: u.name };
@@ -94,10 +121,11 @@ export const appRouter = router({
   auth: router({
     register: publicProcedure
       .use(rateLimitMiddleware('register'))
-      .input(z.object({ email: emailSchema, name: z.string().min(1, '请填写昵称'), password: passwordSchema, rememberMe: z.boolean().optional().default(true) }))
-      .mutation(async ({ input }) => {
+      .input(z.object({ email: emailSchema, name: z.string().min(1, '请填写昵称').max(200, '昵称过长'), password: passwordSchema, rememberMe: z.boolean().optional().default(true) }))
+      .mutation(async ({ ctx, input }) => {
+        // S6（A07）：不区分「邮箱已存在 / 其它错误」，避免攻击者借此枚举已注册邮箱
         if (await store.getUserByEmail(input.email)) {
-          throw new TRPCError({ code: 'CONFLICT', message: '该邮箱已注册' });
+          throw new TRPCError({ code: 'CONFLICT', message: '注册失败，请稍后再试' });
         }
         const passwordHash = await hashPassword(input.password);
         const user = await store.createUser({ email: input.email, name: input.name, passwordHash });
@@ -105,18 +133,21 @@ export const appRouter = router({
         const family = await store.createFamily({ name: `${input.name}的家庭`, ownerId: user.id, kind: 'personal' });
         await store.addMembership({ familyId: family.id, userId: user.id, role: 'owner' });
         const tokens = await issueSession(user.id, input.rememberMe);
+        audit.logSecurityEvent('auth.register', { userId: user.id, ip: ctx.ip, result: 'success' });
         return { user: toPublic(user), ...tokens };
       }),
 
     login: publicProcedure
       .use(rateLimitMiddleware('login'))
       .input(z.object({ email: emailSchema, password: z.string().min(1), rememberMe: z.boolean().optional().default(true) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const user = await store.getUserByEmail(input.email);
         if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
+          audit.logSecurityEvent('auth.login.fail', { ip: ctx.ip, result: 'failure', detail: { reason: 'invalid_credentials' } });
           throw new TRPCError({ code: 'UNAUTHORIZED', message: '邮箱或密码错误' });
         }
         const tokens = await issueSession(user.id, input.rememberMe);
+        audit.logSecurityEvent('auth.login', { userId: user.id, ip: ctx.ip, result: 'success' });
         return { user: toPublic(user), ...tokens };
       }),
 
@@ -125,8 +156,11 @@ export const appRouter = router({
       .input(z.object({ refreshToken: z.string().min(1) }))
       .mutation(async ({ input }) => {
         try {
-          return await rotateRefresh(input.refreshToken);
+          const r = await rotateRefresh(input.refreshToken);
+          audit.logSecurityEvent('auth.refresh', { result: 'success' });
+          return r;
         } catch {
+          audit.logSecurityEvent('auth.refresh', { result: 'failure', detail: { reason: 'invalid_or_expired' } });
           throw new TRPCError({ code: 'UNAUTHORIZED', message: '刷新令牌无效或已过期' });
         }
       }),
@@ -151,6 +185,7 @@ export const appRouter = router({
           await revokeAllSessions(ctx.userId);
           closeUserSessions(ctx.userId);
         }
+        audit.logSecurityEvent('auth.logout', { userId: ctx.userId, ip: ctx.ip, result: 'success' });
         return { ok: true };
       }),
 
@@ -158,6 +193,7 @@ export const appRouter = router({
     logoutAll: authedProcedure.mutation(async ({ ctx }) => {
       await revokeAllSessions(ctx.userId);
       closeUserSessions(ctx.userId);
+      audit.logSecurityEvent('auth.logoutAll', { userId: ctx.userId, ip: ctx.ip, result: 'success' });
       return { ok: true };
     }),
 
@@ -166,13 +202,14 @@ export const appRouter = router({
     deleteAccount: authedProcedure.mutation(async ({ ctx }) => {
       await store.deleteUserAccount(ctx.userId);
       closeUserSessions(ctx.userId);
+      audit.logSecurityEvent('account.delete', { userId: ctx.userId, ip: ctx.ip, result: 'success' });
       return { ok: true };
     }),
   }),
 
   families: router({
     create: authedProcedure
-      .input(z.object({ name: z.string().min(1, '请填写家庭名称') }))
+      .input(z.object({ name: z.string().min(1, '请填写家庭名称').max(100, '家庭名称过长') }))
       .mutation(async ({ ctx, input }) => {
         const family = await store.createFamily({ name: input.name, ownerId: ctx.userId, kind: 'shared' });
         await store.addMembership({ familyId: family.id, userId: ctx.userId, role: 'owner' });
@@ -299,6 +336,7 @@ export const appRouter = router({
         }
         const m = await store.updateMembershipRole(target.id, input.role);
         publishEvent({ kind: 'role.updated', familyId: input.familyId, userId: input.userId, role: m.role, actorId: ctx.userId });
+        audit.logSecurityEvent('role.update', { userId: ctx.userId, ip: ctx.ip, result: 'success', detail: { targetUserId: input.userId, role: input.role } });
         return { role: m.role };
       }),
 
@@ -315,6 +353,7 @@ export const appRouter = router({
         await store.updateMembershipRole(target.id, 'owner');
         await store.updateMembershipRole(me.id, 'admin');
         publishEvent({ kind: 'ownership.transferred', familyId: input.familyId, from: ctx.userId, to: input.userId, actorId: ctx.userId });
+        audit.logSecurityEvent('ownership.transfer', { userId: ctx.userId, ip: ctx.ip, result: 'success', detail: { from: ctx.userId, to: input.userId } });
         return { ok: true };
       }),
   }),
@@ -428,7 +467,7 @@ export const appRouter = router({
           label: z.string().min(1),
           scope: z.enum(['all', 'specific']).default('all'),
           allowedUserIds: z.array(z.string()).default([]),
-          snapshot: z.any(),
+          snapshot: snapshotSchema,
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -487,7 +526,7 @@ export const appRouter = router({
           label: z.string().min(1),
           scope: z.enum(['all', 'specific']).default('all'),
           allowedUserIds: z.array(z.string()).default([]),
-          snapshot: z.any(),
+          snapshot: snapshotSchema,
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -543,7 +582,7 @@ export const appRouter = router({
                 label: z.string().min(1),
                 scope: z.enum(['all', 'specific']).default('all'),
                 allowedUserIds: z.array(z.string()).default([]),
-                snapshot: z.any(),
+                snapshot: snapshotSchema,
               }),
             )
             .default([]),

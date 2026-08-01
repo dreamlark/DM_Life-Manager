@@ -27,7 +27,7 @@ afterAll(async () => {
 
 async function register(name: string) {
   const email = `mu_${name.toLowerCase()}_${Date.now()}_${Math.floor(Math.random() * 1e6)}@home.dev`;
-  return anon().auth.register({ email, name, password: 'secret1' });
+  return anon().auth.register({ email, name, password: 'secret123' });
 }
 
 /** 在指定用户的个人域写入一批代表性数据（覆盖 task/finance/notes/project/interest/reminder/flow） */

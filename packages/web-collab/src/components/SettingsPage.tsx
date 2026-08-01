@@ -119,6 +119,8 @@ export function SettingsPage({
   };
 
   // —— IMA 知识库配置（本地持久化，供后续 IMA 集成读取）——
+  // S15（A02/A10）：此处填写的 IMA 接口地址/令牌仅存于本机 localStorage；浏览器在调用 IMA 时
+  // 客户端直连该地址（数据外发到用户自填的第三方服务，需用户知情同意）。服务端不存储、不中转这些凭据。
   const [imaEndpoint, setImaEndpoint] = useState('');
   const [imaToken, setImaToken] = useState('');
   useEffect(() => {

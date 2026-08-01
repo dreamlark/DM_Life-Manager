@@ -15,8 +15,13 @@ import { sanitizeError } from './log-sanitize';
 const PORT = Number(process.env.PORT || 4100);
 // CORS 默认收紧：未显式设置时不发 CORS 头（仅同源可用）。allinone/compose 显式设 '*' 时仍生效。
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '';
-// tRPC 请求体上限，避免恶意超大请求打满内存（0 = 不限制，默认 10MB）
-const MAX_BODY_SIZE = Number(process.env.MAX_BODY_SIZE ?? 10 * 1024 * 1024);
+// S3（A05）：生产环境若仍为 '*'，明确告警（任意源跨域，严重风险）
+if (CORS_ORIGIN === '*' && process.env.NODE_ENV === 'production') {
+  console.warn('[http-server] 警告：CORS_ORIGIN 被设为 "*"，生产环境将允许任意源跨域访问，存在严重安全风险，请改为具体前端源。');
+}
+// tRPC 请求体上限，避免恶意超大请求打满内存（0 = 不限制）。
+// S13（A04）：与 importAll 的 IMPORT_MAX_BYTES 统一为 20MB，消除「先 10MB 解析再 20MB 放行」的不一致。
+const MAX_BODY_SIZE = Number(process.env.MAX_BODY_SIZE ?? 20 * 1024 * 1024);
 const ENDPOINT = '/trpc';
 
 let dbReady = false;

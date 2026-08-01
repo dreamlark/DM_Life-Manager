@@ -4,12 +4,13 @@
 // 设计依据：family-collab-design.md §3.5 / §7（WebSocket 而非 SSE，需双向在线状态）。
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'node:http';
-import { verifyAccess } from '../auth';
+import * as auth from '../auth';
 import { store } from '../store';
 import { subscribeEvents, type RealtimeEvent } from './eventBus';
 
 interface ConnMeta {
   userId: string;
+  token: string;
 }
 
 // userId -> 该用户全部 socket（多标签页）
@@ -91,7 +92,7 @@ export function attachHub(server: Server): WebSocketServer {
     const token = (typeof subProto === 'string' && subProto.length ? subProto : url.searchParams.get('token')) ?? undefined;
     let userId: string | null = null;
     try {
-      userId = token ? verifyAccess(token) : null;
+      userId = token ? auth.verifyAccess(token) : null;
     } catch {
       userId = null;
     }
@@ -100,7 +101,7 @@ export function attachHub(server: Server): WebSocketServer {
       return;
     }
 
-    meta.set(ws, { userId });
+    meta.set(ws, { userId, token: token ?? '' });
     if (!clients.has(userId)) clients.set(userId, new Set());
     clients.get(userId)!.add(ws);
 
@@ -111,8 +112,39 @@ export function attachHub(server: Server): WebSocketServer {
       if (ws.readyState === ws.OPEN) ws.ping();
     }, 25_000);
 
+    // S10（A07）：连接建立后周期性（及每次收到消息时）重验 access 令牌；过期则关闭（1008），
+    // 避免令牌失效后仍长期保有实时通道。坚持用 Sec-WebSocket-Protocol 传令牌（连接时已取）。
+    const tokenRecheckMs = Number(process.env.WS_TOKEN_RECHECK_MS ?? 5 * 60 * 1000);
+    const tokenRecheck = setInterval(() => {
+      const m = meta.get(ws);
+      if (!m || !m.token) return;
+      try {
+        auth.verifyAccess(m.token);
+      } catch {
+        try {
+          ws.close(1008, 'token expired');
+        } catch {
+          /* 已关闭 */
+        }
+      }
+    }, tokenRecheckMs);
+    ws.on('message', () => {
+      const m = meta.get(ws);
+      if (!m || !m.token) return;
+      try {
+        auth.verifyAccess(m.token);
+      } catch {
+        try {
+          ws.close(1008, 'token expired');
+        } catch {
+          /* 已关闭 */
+        }
+      }
+    });
+
     ws.on('close', () => {
       clearInterval(heartbeat);
+      clearInterval(tokenRecheck);
       const set = clients.get(userId!);
       set?.delete(ws);
       if (set && set.size === 0) {

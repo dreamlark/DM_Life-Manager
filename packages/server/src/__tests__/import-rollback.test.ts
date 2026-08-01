@@ -23,7 +23,7 @@ afterAll(async () => {
 
 describe('importPersonalData 原子性（F1 修复）', () => {
   it('中途失败整包回滚：原数据完好、无部分泄漏', async () => {
-    const u = await anon().auth.register({ email: 'imp-a@home.dev', name: 'A', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'imp-a@home.dev', name: 'A', password: 'secret123' });
     const me = asUser(u.user.id);
     const familyId = await store.getPersonalFamilyId(u.user.id);
 
@@ -59,7 +59,7 @@ describe('importPersonalData 原子性（F1 修复）', () => {
   });
 
   it('合法整包导入成功且计数正确', async () => {
-    const u = await anon().auth.register({ email: 'imp-b@home.dev', name: 'B', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'imp-b@home.dev', name: 'B', password: 'secret123' });
     const familyId = await store.getPersonalFamilyId(u.user.id);
     const bundle = {
       tasks: [

@@ -37,7 +37,9 @@ services:
       - NODE_ENV=production
       - PORT=4100
       - PGLITE_DIR=/data
-      - CORS_ORIGIN=*
+      # S3（A05）：CORS 源必须显式设置（前端访问源，如 https://dm-life.example.ts.net）；公网禁止用 '*'。
+      # 缺失则 compose 启动直接报错，避免误用通配符跨域。
+      - CORS_ORIGIN=${CORS_ORIGIN:?请在 .env 中设置 CORS_ORIGIN（前端访问源，如 https://dm-life.example.ts.net；公网禁止用 *）}
       # 安全必填：强随机 JWT 签名密钥。缺失时 server 启动即失败（fail-closed）。
       # 生成示例：openssl rand -base64 48
       - JWT_SECRET=${JWT_SECRET:?请在 .env 中设置 JWT_SECRET（openssl rand -base64 48）}

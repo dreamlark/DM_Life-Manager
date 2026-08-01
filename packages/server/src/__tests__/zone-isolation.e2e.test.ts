@@ -21,7 +21,7 @@ const asUser = (userId: string) => appRouter.createCaller({ userId } as AuthCont
 
 /** 注册一个用户并回传 caller + userId（复用项目真实 auth 路径） */
 async function register(email: string) {
-  const reg = await anon().auth.register({ email, name: 'u', password: 'secret1' });
+  const reg = await anon().auth.register({ email, name: 'u', password: 'secret123' });
   return { userId: reg.user.id, me: asUser(reg.user.id) };
 }
 

@@ -20,7 +20,7 @@ afterAll(async () => {
 
 async function register(name: string) {
   const e = `si_${name.toLowerCase()}_${Date.now()}@home.dev`;
-  const r = await anon().auth.register({ email: e, name, password: 'secret1' });
+  const r = await anon().auth.register({ email: e, name, password: 'secret123' });
   return r;
 }
 

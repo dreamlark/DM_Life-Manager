@@ -20,11 +20,11 @@ afterAll(async () => {
 
 describe('M2.3 families 管理 + RBAC', () => {
   it('list 返回当前用户所属家庭及角色（多家庭切换基础）', async () => {
-    const alice = await anon().auth.register({ email: 'list-a@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'list-a@home.dev', name: 'Alice', password: 'secret123' });
     const f1 = await asUser(alice.user.id).families.create({ name: '杨家' });
     const f2 = await asUser(alice.user.id).families.create({ name: '陈家' });
 
-    const bob = await anon().auth.register({ email: 'list-b@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'list-b@home.dev', name: 'Bob', password: 'secret123' });
     const inv = await asUser(alice.user.id).families.invite({ familyId: f1.id, role: 'member' });
     await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
 
@@ -37,9 +37,9 @@ describe('M2.3 families 管理 + RBAC', () => {
   });
 
   it('owner 可移除 member；移除后成员列表只剩 owner', async () => {
-    const alice = await anon().auth.register({ email: 'rm-a@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'rm-a@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-    const bob = await anon().auth.register({ email: 'rm-b@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'rm-b@home.dev', name: 'Bob', password: 'secret123' });
     const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'member' });
     await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
 
@@ -50,7 +50,7 @@ describe('M2.3 families 管理 + RBAC', () => {
   });
 
   it('owner 不能移除自己（应提示所有者不可被移除）', async () => {
-    const alice = await anon().auth.register({ email: 'rmself@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'rmself@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
     await expect(
       asUser(alice.user.id).families.removeMember({ familyId: family.id, userId: alice.user.id }),
@@ -58,12 +58,12 @@ describe('M2.3 families 管理 + RBAC', () => {
   });
 
   it('admin 可将 member 改为 child（updateRole）', async () => {
-    const alice = await anon().auth.register({ email: 'ur-a@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'ur-a@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-    const admin = await anon().auth.register({ email: 'ur-admin@home.dev', name: 'Admin', password: 'secret1' });
+    const admin = await anon().auth.register({ email: 'ur-admin@home.dev', name: 'Admin', password: 'secret123' });
     const invAdmin = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'admin' });
     await asUser(admin.user.id).families.acceptInvite({ token: invAdmin.token });
-    const bob = await anon().auth.register({ email: 'ur-b@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'ur-b@home.dev', name: 'Bob', password: 'secret123' });
     const invBob = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'member' });
     await asUser(bob.user.id).families.acceptInvite({ token: invBob.token });
 
@@ -74,9 +74,9 @@ describe('M2.3 families 管理 + RBAC', () => {
   });
 
   it('updateRole 不能手动设为 owner', async () => {
-    const alice = await anon().auth.register({ email: 'uro-a@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'uro-a@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-    const bob = await anon().auth.register({ email: 'uro-b@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'uro-b@home.dev', name: 'Bob', password: 'secret123' });
     const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'member' });
     await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
 
@@ -86,9 +86,9 @@ describe('M2.3 families 管理 + RBAC', () => {
   });
 
   it('owner 转让后自身降为 admin，目标升为 owner', async () => {
-    const alice = await anon().auth.register({ email: 'to-a@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'to-a@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-    const bob = await anon().auth.register({ email: 'to-b@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'to-b@home.dev', name: 'Bob', password: 'secret123' });
     const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'admin' });
     await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
 
@@ -101,9 +101,9 @@ describe('M2.3 families 管理 + RBAC', () => {
   });
 
   it('member 无 manageMembers，移除成员被 FORBIDDEN', async () => {
-    const alice = await anon().auth.register({ email: 'rbac-a@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'rbac-a@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-    const bob = await anon().auth.register({ email: 'rbac-b@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'rbac-b@home.dev', name: 'Bob', password: 'secret123' });
     const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'member' });
     await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
 
@@ -113,9 +113,9 @@ describe('M2.3 families 管理 + RBAC', () => {
   });
 
   it('child 无 manageMembers，改角色被 FORBIDDEN', async () => {
-    const alice = await anon().auth.register({ email: 'rbac2-a@home.dev', name: 'Alice', password: 'secret1' });
+    const alice = await anon().auth.register({ email: 'rbac2-a@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-    const bob = await anon().auth.register({ email: 'rbac2-b@home.dev', name: 'Bob', password: 'secret1' });
+    const bob = await anon().auth.register({ email: 'rbac2-b@home.dev', name: 'Bob', password: 'secret123' });
     const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'child' });
     await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
 

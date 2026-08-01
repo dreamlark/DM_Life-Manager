@@ -63,10 +63,12 @@ const DDL = [
   `CREATE INDEX IF NOT EXISTS memberships_user_idx ON memberships(user_id)`,
   `CREATE INDEX IF NOT EXISTS invitations_family_idx ON invitations(family_id)`,
   `CREATE INDEX IF NOT EXISTS sessions_refresh_idx ON sessions(refresh_token)`,
+  `CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS calendar_events_family_idx ON calendar_events(family_id)`,
   `CREATE INDEX IF NOT EXISTS calendar_events_zone_idx ON calendar_events(owner_id, visibility)`,
   `CREATE INDEX IF NOT EXISTS calendar_events_version_idx ON calendar_events(version)`,
   `CREATE INDEX IF NOT EXISTS calendar_events_start_idx ON calendar_events(family_id, start_at)`,
+  `CREATE INDEX IF NOT EXISTS calendar_events_family_vis_idx ON calendar_events(family_id, visibility)`,
   `CREATE TABLE IF NOT EXISTS shared_finance_items (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     family_id uuid NOT NULL REFERENCES families(id) ON DELETE CASCADE,
@@ -355,6 +357,7 @@ const DDL = [
     updated_at text NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS reminder_fire_idx ON reminder_clocks(owner_id, visibility, next_fire_at, status)`,
+  `CREATE INDEX IF NOT EXISTS reminder_next_fire_idx ON reminder_clocks(next_fire_at)`,
   `CREATE INDEX IF NOT EXISTS reminder_version_idx ON reminder_clocks(version)`,
   `CREATE TABLE IF NOT EXISTS focus_sessions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

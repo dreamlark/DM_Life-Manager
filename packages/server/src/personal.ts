@@ -79,10 +79,16 @@ export const personalRouters = {
         emit(ctx, 'tasks.ensureDaily', familyId);
         return;
       }),
-    all: authedProcedure.query(async ({ ctx }) => {
-      const familyId = await store.getPersonalFamilyId(ctx.userId);
-      return store.listAllTasks(familyId);
-    }),
+    // S9（A04/D）：支持分页，避免无上限全表拉取打满内存；默认上限 1000（可被 TASKS_LIST_LIMIT 覆盖），
+    // 高于既有压测规模（500 任务），不破坏现有调用方。
+    all: authedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(5000).optional(), offset: z.number().int().min(0).optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        const familyId = await store.getPersonalFamilyId(ctx.userId);
+        const limit = input?.limit ?? Number(process.env.TASKS_LIST_LIMIT ?? 1000);
+        const offset = input?.offset ?? 0;
+        return store.listAllTasks(familyId, limit, offset);
+      }),
     create: authedProcedure
       .input(createTaskSchema)
       .mutation(async ({ ctx, input }) => {
@@ -642,6 +648,16 @@ export const personalRouters = {
         if (!input?.bundle || typeof input.bundle !== 'object' || Array.isArray(input.bundle)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: '无效的备份文件' });
         }
+        // S7（A04）：仅允许已知个人域表名，拒绝未知键（防御写入非预期表 / 列）
+        const KNOWN_IMPORT_TABLES = new Set([
+          'domains', 'projects', 'tasks', 'interests', 'notes', 'debts',
+          'incomes', 'transactions', 'assets', 'budgets', 'reminderClocks', 'focusSessions', 'financeTransfers',
+        ]);
+        for (const key of Object.keys(input.bundle)) {
+          if (!KNOWN_IMPORT_TABLES.has(key)) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `未知备份表 ${key}，导入被拒绝` });
+          }
+        }
         // 体积上限 + 形状校验：避免超大包打满内存，且保证值为数组（与 exportAll 结构一致）
         const MAX_IMPORT_BYTES = Number(process.env.IMPORT_MAX_BYTES ?? 20 * 1024 * 1024);
         const serialized = JSON.stringify(input.bundle);
@@ -664,6 +680,21 @@ export const personalRouters = {
     setCustomDataDir: authedProcedure
       .input(z.object({ dir: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
+        // S2（A01）：仅共享家庭的所有者/管理员可改全局数据目录；个人模式用户仅有 personal family，自然被拒。
+        const memberships = await store.getMembershipsByUser(ctx.userId);
+        let elevated = false;
+        for (const m of memberships) {
+          if (m.role !== 'owner' && m.role !== 'admin') continue;
+          const fam = await store.getFamily(m.familyId);
+          if (fam && fam.kind === 'shared') {
+            elevated = true;
+            break;
+          }
+        }
+        if (!elevated) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: '仅家庭所有者/管理员可更改数据目录' });
+        }
+
         const fs = await import('node:fs');
         const os = await import('node:os');
         const path = await import('node:path');
@@ -674,8 +705,29 @@ export const personalRouters = {
         } catch {
           throw new TRPCError({ code: 'BAD_REQUEST', message: '数据目录路径非法' });
         }
-        if (resolved === '' || /[<>:"|?*]/.test(resolved)) {
+        // 注意：Windows 绝对路径形如 C:\...，盘符后的冒号属合法，需先剥离盘符再检测非法字符，
+        // 否则会把任何绝对路径误判为「含非法字符」而拒绝（跨平台一致性）。
+        const resolvedNoDrive = resolved.replace(/^[A-Za-z]:/, '');
+        if (resolved === '' || /[<>:"|?*]/.test(resolvedNoDrive)) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: '数据目录路径包含非法字符' });
+        }
+        // S2（A01）：路径白名单——目标目录必须位于 PGLITE_DIR_ALLOWED（冒号分隔，可空）列出的基目录内，
+        // 或默认限制为当前数据根（PGLITE_DIR 或 ~/.dm-life/data）的子目录；否则拒绝，避免任意落盘到系统目录。
+        const allowedBases = (process.env.PGLITE_DIR_ALLOWED ?? '')
+          .split(':')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((s) => path.resolve(s));
+        const dataRoot = process.env.PGLITE_DIR
+          ? path.resolve(process.env.PGLITE_DIR)
+          : path.join(os.homedir(), '.dm-life', 'data');
+        const bases = allowedBases.length > 0 ? allowedBases : [dataRoot];
+        const isAllowed = bases.some((base) => {
+          const rel = path.relative(base, resolved);
+          return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+        });
+        if (!isAllowed) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: '数据目录不在允许的基目录内' });
         }
         const probe = path.join(resolved, '.dm-life-write-probe');
         try {

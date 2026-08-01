@@ -23,7 +23,7 @@ afterAll(async () => {
 
 describe('个人域（从 engine 迁移到 server，按 personal family 隔离）', () => {
   it('注册 → tasks.ensureDaily / today / create 正常工作', async () => {
-    const u = await anon().auth.register({ email: 'pd-a@home.dev', name: 'A', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'pd-a@home.dev', name: 'A', password: 'secret123' });
     const me = asUser(u.user.id);
 
     await me.tasks.ensureDaily({ date: DATE });
@@ -44,7 +44,7 @@ describe('个人域（从 engine 迁移到 server，按 personal family 隔离�
   });
 
   it('finance.summary / debts / incomes 返回合理数值形状', async () => {
-    const u = await anon().auth.register({ email: 'pd-b@home.dev', name: 'B', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'pd-b@home.dev', name: 'B', password: 'secret123' });
     const me = asUser(u.user.id);
 
     const summary = await me.finance.summary();
@@ -72,7 +72,7 @@ describe('个人域（从 engine 迁移到 server，按 personal family 隔离�
   });
 
   it('insights.dailyCard / pressure 返回合理形状', async () => {
-    const u = await anon().auth.register({ email: 'pd-c@home.dev', name: 'C', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'pd-c@home.dev', name: 'C', password: 'secret123' });
     const me = asUser(u.user.id);
 
     const card = await me.insights.dailyCard({ date: DATE });
@@ -87,7 +87,7 @@ describe('个人域（从 engine 迁移到 server，按 personal family 隔离�
   });
 
   it('reminders.list / domains.list / notes.ingest / knowledge.semanticSearch 正常', async () => {
-    const u = await anon().auth.register({ email: 'pd-d@home.dev', name: 'D', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'pd-d@home.dev', name: 'D', password: 'secret123' });
     const me = asUser(u.user.id);
 
     expect(Array.isArray(await me.reminders.list())).toBe(true);
@@ -110,7 +110,7 @@ describe('个人域（从 engine 迁移到 server，按 personal family 隔离�
   });
 
   it('flow.summary 返回热力图/洞察形状', async () => {
-    const u = await anon().auth.register({ email: 'pd-e@home.dev', name: 'E', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'pd-e@home.dev', name: 'E', password: 'secret123' });
     const me = asUser(u.user.id);
 
     const summary = await me.flow.summary({ range: 'week', unit: 'hour', axis: 'domain' });
@@ -122,7 +122,7 @@ describe('个人域（从 engine 迁移到 server，按 personal family 隔离�
   });
 
   it('projects.create / interests.capture 正常且按 family 隔离', async () => {
-    const u = await anon().auth.register({ email: 'pd-f@home.dev', name: 'F', password: 'secret1' });
+    const u = await anon().auth.register({ email: 'pd-f@home.dev', name: 'F', password: 'secret123' });
     const me = asUser(u.user.id);
 
     const p = await me.projects.create({ name: '上线 v2', paraType: 'project' });

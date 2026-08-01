@@ -22,7 +22,7 @@ function redactValue(key: string, value: unknown): unknown {
   return value;
 }
 
-function redactObject(obj: Record<string, unknown>): Record<string, unknown> {
+export function redactObject(obj: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
     out[k] = redactValue(k, v);

@@ -24,8 +24,8 @@ afterAll(async () => {
 
 describe('跨用户隔离（评审 #6）', () => {
   it('B 看不到 A 的私区任务；用 A 的 id 调 update 返回 NOT_FOUND 而非 500（评审 #3）', async () => {
-    const a = await anon().auth.register({ email: 'a@home.dev', name: 'A', password: 'secret1' });
-    const b = await anon().auth.register({ email: 'b@home.dev', name: 'B', password: 'secret1' });
+    const a = await anon().auth.register({ email: 'a@home.dev', name: 'A', password: 'secret123' });
+    const b = await anon().auth.register({ email: 'b@home.dev', name: 'B', password: 'secret123' });
     const ta = await asUser(a.user.id).tasks.create({ title: 'A 的私人任务', domainKey: 'work' });
 
     // B 的列表不应包含 A 的私区任务
@@ -39,8 +39,8 @@ describe('跨用户隔离（评审 #6）', () => {
   });
 
   it('删除 A 账户不会删除 B 的私区数据（删 A 不删 B）', async () => {
-    const a = await anon().auth.register({ email: 'a2@home.dev', name: 'A2', password: 'secret1' });
-    const b = await anon().auth.register({ email: 'b2@home.dev', name: 'B2', password: 'secret1' });
+    const a = await anon().auth.register({ email: 'a2@home.dev', name: 'A2', password: 'secret123' });
+    const b = await anon().auth.register({ email: 'b2@home.dev', name: 'B2', password: 'secret123' });
     const ta = await asUser(a.user.id).tasks.create({ title: 'A2 的私人任务', domainKey: 'work' });
     const tb = await asUser(b.user.id).tasks.create({ title: 'B2 的私人任务', domainKey: 'work' });
     const aFamily = await store.getPersonalFamilyId(a.user.id);
@@ -63,8 +63,8 @@ describe('跨用户隔离（评审 #6）', () => {
 
 describe('deleteUserAccount public 改挂 SYSTEM_AUTHOR_ID（评审 #5）', () => {
   it('A 的 public 任务在注销后改挂 SYSTEM_AUTHOR_ID 且仍对 B 可见', async () => {
-    const a = await anon().auth.register({ email: 'a3@home.dev', name: 'A3', password: 'secret1' });
-    const b = await anon().auth.register({ email: 'b3@home.dev', name: 'B3', password: 'secret1' });
+    const a = await anon().auth.register({ email: 'a3@home.dev', name: 'A3', password: 'secret123' });
+    const b = await anon().auth.register({ email: 'b3@home.dev', name: 'B3', password: 'secret123' });
     const pub = await asUser(a.user.id).tasks.create({ title: '公共任务', domainKey: 'work' });
 
     // 直接将其置为 public（真实写路径默认 private）
@@ -93,7 +93,7 @@ describe('deleteUserAccount public 改挂 SYSTEM_AUTHOR_ID（评审 #5）', () =
 
 describe('乐观锁契约 updateX 返回 {conflict, latestData}（评审 #4）', () => {
   it('tasks.update / validateInterest / convertInterest 返回 {conflict, latestData}', async () => {
-    const a = await anon().auth.register({ email: 'a4@home.dev', name: 'A4', password: 'secret1' });
+    const a = await anon().auth.register({ email: 'a4@home.dev', name: 'A4', password: 'secret123' });
     const family = await store.getPersonalFamilyId(a.user.id);
 
     const t = await asUser(a.user.id).tasks.create({ title: '待更新', domainKey: 'work' });

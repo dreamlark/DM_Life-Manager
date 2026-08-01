@@ -11,12 +11,12 @@ const asUser = (userId: string) => appRouter.createCaller({ userId } as AuthCont
 
 /** 建立 alice(owner) + bob(member) + kid(child) 的家庭，返回上下文 */
 async function seedFamily() {
-  const alice = await anon().auth.register({ email: 'cal-a@home.dev', name: 'Alice', password: 'secret1' });
+  const alice = await anon().auth.register({ email: 'cal-a@home.dev', name: 'Alice', password: 'secret123' });
   const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-  const bob = await anon().auth.register({ email: 'cal-b@home.dev', name: 'Bob', password: 'secret1' });
+  const bob = await anon().auth.register({ email: 'cal-b@home.dev', name: 'Bob', password: 'secret123' });
   const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'member' });
   await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
-  const kid = await anon().auth.register({ email: 'cal-k@home.dev', name: 'Kid', password: 'secret1' });
+  const kid = await anon().auth.register({ email: 'cal-k@home.dev', name: 'Kid', password: 'secret123' });
   const invK = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'child' });
   await asUser(kid.user.id).families.acceptInvite({ token: invK.token });
   return { alice, bob, kid, family };
@@ -53,7 +53,7 @@ describe('M2 共享日历：创建 / 编辑 / 删除 + RBAC', () => {
     expect(list.map((e) => e.id)).toEqual([ev2.id, ev1.id]); // 升序
 
     // guest 无 createEvent
-    const guest = await anon().auth.register({ email: 'cal-g@home.dev', name: 'Guest', password: 'secret1' });
+    const guest = await anon().auth.register({ email: 'cal-g@home.dev', name: 'Guest', password: 'secret123' });
     const invG = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'guest' });
     await asUser(guest.user.id).families.acceptInvite({ token: invG.token });
     await expect(

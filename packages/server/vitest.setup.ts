@@ -13,6 +13,9 @@ import path from 'node:path';
 process.env.RATE_REGISTER_LIMIT = process.env.RATE_REGISTER_LIMIT ?? '100000';
 process.env.RATE_LOGIN_LIMIT = process.env.RATE_LOGIN_LIMIT ?? '100000';
 process.env.RATE_REFRESH_LIMIT = process.env.RATE_REFRESH_LIMIT ?? '100000';
+// S12：IP 未知时落入最严格全局桶；测试中以高上限放行（直连调用 ctx.ip 为 undefined），避免误伤。
+// 真实生产环境该上限由 RATE_UNKNOWN_LIMIT 控制（默认 5）。
+process.env.RATE_UNKNOWN_LIMIT = process.env.RATE_UNKNOWN_LIMIT ?? '100000';
 
 if (process.env.VITEST) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dm-life-server-test-'));
