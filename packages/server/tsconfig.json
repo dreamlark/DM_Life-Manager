@@ -4,5 +4,6 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/db/drizzle.config.ts"]
 }

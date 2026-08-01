@@ -1,6 +1,7 @@
-// 本地联机开发一键启动：同时拉起「统一后端 server」+「联机前端 web-collab」。
-// 旧的根脚本（dev:engine / dev:web / dev:all）面向桌面单机架构（engine + Tauri），
-// 没有浏览器界面；本脚本对应 README §2 的本地联机路径，避免误敲 `npm run dev` 踩空。
+// 本地联机开发一键启动：同时拉起「统一后端 server(:4100)」+「联机前端 web-collab(:5173)」。
+// 本脚本是单后端 All-in-One 架构（ADR-006）的本地等价物：仅启动 server 与 web-collab，
+// 不再有独立 engine 进程（个人域与协作域统一由 server 提供）。对应 README §2 的本地联机路径，
+// 避免误敲 `npm run dev` 踩空。
 import { spawn } from 'node:child_process';
 
 const PROCS = [

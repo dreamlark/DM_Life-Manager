@@ -2,26 +2,21 @@
   "name": "dm-life",
   "private": true,
   "version": "0.1.0",
-  "description": "DM_life 人生管理系统 — TypeScript + React + Vite + Tauri 2 全新实现 (P0)",
+  "description": "DM_life 人生管理系统 — 单后端 All-in-One 架构（统一 server 后端 + web-collab 前端 + 内置 caddy，TypeScript + React + Vite + tRPC v11 + Drizzle + PGlite）",
   "workspaces": [
     "packages/shared",
-    "packages/engine",
-    "apps/desktop",
     "packages/server",
     "packages/web-collab"
   ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:engine": "npm run dev -w packages/engine",
     "dev:web": "npm run dev -w packages/web-collab",
     "dev:web-collab": "npm run dev -w packages/web-collab",
     "dev:clean": "node scripts/dev-clean.mjs",
     "dev:clean:y": "node scripts/dev-clean.mjs -y",
-    "dev:all": "npm run dev:clean -y && npm run dev:engine",
     "build": "npm run build -w packages/web-collab",
-    "test": "npm run test -w packages/engine",
-    "test:server": "npm run test -w packages/server",
-    "studio": "npm run studio -w packages/engine"
+    "test": "npm run test -w packages/server",
+    "test:server": "npm run test -w packages/server"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

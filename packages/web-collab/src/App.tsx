@@ -51,6 +51,9 @@ export default function App() {
   // 协作视图导航态（独立于 mode）：默认在个人功能壳（LocalApp），
   // 仅当用户主动点击「协作」入口时才进入家庭协作视图。
   const [familyOpen, setFamilyOpen] = useState(false);
+  // PIN 解锁尝试是否已“落定”（成功置 token 或失败放行）。仅用于首屏门控：
+  // 落定前不要挂载数据层（避免令牌未写入就发请求 → 误弹「请先登录」）；落定后无论成败都进入看板。
+  const [unlockSettled, setUnlockSettled] = useState(false);
 
   // 启动：自动重连——有令牌则补取用户信息并加载家庭列表；access 缺失时尝试用 refresh 旋转恢复。
   // 已设置 PIN 时跳过服务端引导：锁屏后用 PIN 解密凭据自动登录。
@@ -169,6 +172,9 @@ export default function App() {
           toast.error('自动登录失败，部分操作需重新登录');
         }
       }
+      // 解锁尝试落定（成功已置 token、失败则按设计放行）。置位后首屏门控才放行挂载数据层，
+      // 从而消除「locked=false 先触发 LocalApp 挂载、onUnlock 写入 token 尚未完成」的竞态。
+      setUnlockSettled(true);
       return true;
     },
     [setTokens, setUser, onAuthed, setView],
@@ -311,6 +317,23 @@ export default function App() {
 
     // 个人功能外壳（local 与 collab 模式共用）：协作模式下顶部会出现「协作」入口，
     // 点击才进入家庭协作视图；个人模式则不显示任何协作相关入口。
+    //
+    // 关键修复（PIN 解锁误弹「操作失败：请先登录」根因）：AppLock.unlock() 在 pinStore 中先置
+    // locked=false、再返回解密凭据，于是 LocalApp 会在 onUnlock 写入 JWT 之前就挂载并发起首屏
+    // 数据请求（ensureDaily 等 mutation、tasks.today / domains.list 等 query）。此时 authStore 尚无
+    // token → server 401「请先登录」→ trpcLocal 全局 mutation onError 误弹 toast，而用户其实已登录成功。
+    // 故首屏数据层仅在「令牌已写入」或「解锁尝试已落定（含失败放行）」后才挂载：
+    //   - 落定前（locked 已 false、token 尚未写入）：展示加载态，绝不发请求 → 消除过渡期竞态。
+    //   - 落定且 token 已写入（成功登录）：正常挂载数据层，请求携带有效 token。
+    //   - 落定但 token 缺失（自动登录失败，按设计放行）：挂载空看板，由「自动登录失败」提示引导重登，
+    //     不再卡在加载态；真实未登录场景仍由全局 onError 正确提示，安全性不受影响。
+    if (!accessToken && !unlockSettled) {
+      return (
+        <div className="boot">
+          <div className="spinner" />
+        </div>
+      );
+    }
     return <LocalApp onOpenFamily={() => setFamilyOpen(true)} onLogout={logout} onDeleteAccount={handleDeleteAccount} />;
   })();
 

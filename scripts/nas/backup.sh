@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# 备份 dm-life 数据卷（engine + server 的数据库文件）。
+# 备份 dm-life 数据卷（all-in-one 单镜像挂载的 /data 目录）。
+# 最终架构只有一个数据卷：server（统一后端，PGlite / 可选 Postgres）与自动生成的密钥
+# 全部落在 ./data 下，故只需打包这一个目录。
 # 用法：bash scripts/nas/backup.sh [保留份数，默认 7]
 set -euo pipefail
 
@@ -18,7 +20,7 @@ mkdir -p "$BACKUP_DIR"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="$BACKUP_DIR/dm-life-data-$STAMP.tar.gz"
 
-echo "==> 打包 $DATA_DIR"
+echo "==> 打包 $DATA_DIR（all-in-one 单数据卷）"
 tar -czf "$OUT" -C "$DATA_DIR" .
 
 # 仅保留最近 KEEP 份，删除更早的

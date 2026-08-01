@@ -1,13 +1,13 @@
 /**
- * dev:clean — 一键杀掉所有 dm-life engine 孤儿进程。
+ * dev:clean — 一键杀掉当前 dev 的孤儿进程（server + web-collab）。
  *
- * 为什么需要：沙箱/开发中 `tsx watch` 起的 engine 进程会跨会话成为孤儿，
- * 占用 14570 端口杀不掉，导致新 engine 只能换端口，前端连旧版就报
- * "No procedure found on path 'tasks.delete'"。
+ * 为什么需要：沙箱/开发中 `tsx watch` 起的 server 或 vite 进程会跨会话成为孤儿，
+ * 占用 4100 / 5173 端口杀不掉，导致新 dev 只能换端口，前端连旧版就报
+ * "No procedure found on path 'tasks.delete'" 之类的错。
  *
  * 使用：`npm run dev:clean`
- * 不传参数：列出所有 engine 相关 node 进程，提示确认。
- * -y  / --yes：直接 kill 全部 engine 进程，不询问。
+ * 不传参数：列出所有 dev 相关 node/npm 进程，提示确认。
+ * -y  / --yes：直接 kill 全部 dev 进程，不询问。
  */
 import { execSync } from 'node:child_process';
 import * as os from 'node:os';
@@ -39,7 +39,7 @@ function listNodeProcs() {
       .map((p) => ({ pid: Number(p.ProcessId), cmd: String(p.CommandLine) }));
   }
   // POSIX: 用 ps
-  const out = sh("ps -eo pid,command -ww | grep -E 'node\\b' | grep -v grep || true");
+  const out = sh("ps -eo pid,command -ww | grep -E 'node\\b|npm\\b' | grep -v grep || true");
   return out
     .split('\n')
     .filter(Boolean)
@@ -50,9 +50,9 @@ function listNodeProcs() {
     .filter((x) => !!x);
 }
 
-function isEngineProc(cmd) {
-  // 匹配 "engine/src/index.ts" 或 "packages/engine" 或显式 tsx 启动 engine
-  return /engine[\\\/]src[\\\/]index\.ts|packages[\\\/]engine|dm-life[\\\/]engine/.test(cmd);
+function isDevProc(cmd) {
+  // 匹配单后端本地联机 dev 进程：server(:4100) 或 web-collab(:5173)
+  return /packages[\\\/]server|@dm-life[\\\/]server|packages[\\\/]web-collab|@dm-life[\\\/]web-collab/.test(cmd);
 }
 
 function killProc(pid) {
@@ -80,15 +80,8 @@ function doKill(procs) {
       fail++;
     }
   }
-  // 清理 tmp port 文件
-  try {
-    const portFile = path.join(os.tmpdir(), 'dm-life.engine.port');
-    fs.rmSync(portFile, { force: true });
-  } catch {
-    /* ignore */
-  }
-  console.log(`[dev:clean] done. killed=${ok} failed=${fail}. port 14570 should be free now.`);
-  console.log('  next: npm run dev:engine');
+  console.log(`[dev:clean] done. killed=${ok} failed=${fail}. ports 4100 / 5173 should be free now.`);
+  console.log('  next: npm run dev');
   // 给 Windows 一点时间释放端口
   if (PLATFORM === 'win32') setTimeout(() => process.exit(0), 300);
   else process.exit(0);
@@ -97,14 +90,14 @@ function doKill(procs) {
 const args = process.argv.slice(2);
 const force = args.includes('-y') || args.includes('--yes');
 
-const procs = listNodeProcs().filter((p) => isEngineProc(p.cmd));
+const procs = listNodeProcs().filter((p) => isDevProc(p.cmd));
 
 if (procs.length === 0) {
-  console.log('[dev:clean] no engine processes found. port 14570 should be free.');
+  console.log('[dev:clean] no dev processes found. ports 4100 / 5173 should be free.');
   process.exit(0);
 }
 
-console.log(`[dev:clean] found ${procs.length} engine process(es):`);
+console.log(`[dev:clean] found ${procs.length} dev process(es):`);
 for (const p of procs) {
   // 截断过长的命令行展示
   const snippet = p.cmd.length > 100 ? p.cmd.slice(0, 97) + '...' : p.cmd;

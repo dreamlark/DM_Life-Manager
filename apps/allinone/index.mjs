@@ -1,8 +1,8 @@
 // dm-life All-in-One 编排器
-// 在单个容器内以子进程方式拉起 engine + server，并由内置 caddy 统一对外暴露。
+// 在单个容器内以子进程方式拉起 server，并由内置 caddy 统一对外暴露。
 // 设计目标（对应最终方案的 P1）：一个容器、一个端口、零必填配置。
 //
-// - 缺失 JWT_SECRET / ENGINE_API_TOKEN 时自动生成并持久化到 /data/.env.auto（幂等）。
+// - 缺失 JWT_SECRET 时自动生成并持久化到 /data/.env.auto（幂等）。
 // - 任一子进程非预期退出 → 整体退出，由容器 restart 策略自愈。
 
 import { spawn } from 'node:child_process';
@@ -25,7 +25,7 @@ if (existsSync(AUTO_ENV)) {
     if (m) auto[m[1]] = m[2];
   }
 }
-// S1（A02/A07）：若 JWT_SECRET / ENGINE_API_TOKEN 缺失或命中弱值，则（重新）生成强随机值并回写 .env.auto。
+// S1（A02/A07）：若 JWT_SECRET 缺失或命中弱值，则（重新）生成强随机值并回写 .env.auto。
 function isWeakSecret(s) {
   if (!s || s.length < 32) return true;
   if (/CHANGE_ME|insecure|example|password|secret|test|123|changeme/i.test(s)) return true;
@@ -56,9 +56,8 @@ function ensureSecret(key) {
   }
 }
 ensureSecret('JWT_SECRET');
-ensureSecret('ENGINE_API_TOKEN');
 // 把补齐后的密钥回写，保证重启幂等（已存在则原值不变）。
-// 密钥文件以 0600 写入，避免宿主机卷上其他用户读到 JWT_SECRET / ENGINE_API_TOKEN。
+// 密钥文件以 0600 写入，避免宿主机卷上其他用户读到 JWT_SECRET。
 const out = Object.entries(auto)
   .map(([k, v]) => `${k}=${v}`)
   .join('\n') + '\n';

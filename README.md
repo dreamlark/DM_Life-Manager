@@ -1,10 +1,9 @@
 # DM_life — 人生管理系统（TypeScript 实现 · 单机 + 家庭协作）
 
 一套自托管的人生管理系统：任务 / 四象限 / 时间块 / 财务 / 提醒 / 灵感 / 家庭共享。
-架构遵循 `D:\DMYY\DM_Life` 的 `architecture.md` 规范，采用 **TypeScript + React + Vite** 前端、事件溯源（仅追加）引擎。
+架构为 **ADR-006 单后端 All-in-One**：统一 `server` 后端 + `web-collab` 前端 + 内置 caddy，采用 **TypeScript + React + Vite** 前端、tRPC v11 + Drizzle + PGlite（文件型，免外部数据库）、事件溯源（仅追加）引擎。
 
-> **代码位置**：本目录 `D:\DMYY\DM_LifeManager-review` 即当前主线（ADR-006 单后端版）。
-> 旧双后端工作版已归档至 `D:\DMYY\DM_Life\archive\dm-life`（7-29 前的改动都在那；本版走查无误后归档，源码保留可回溯）。
+> **代码位置**：本仓库根目录即当前主线（ADR-006 单后端版），架构以 `packages/server` 为唯一后端、`apps/allinone` 为编排器、`Dockerfile.allinone` 构建单镜像。
 
 ---
 
@@ -34,7 +33,7 @@
 
 ## 近期改动（2026-07-30）
 
-从旧双后端工作版（`D:\DMYY\DM_Life\dm-life`）cherry-pick 合并而来，单后端架构未动（交付报告：`D:\DMYY\DM_Life\deliverables\gstack\merge-dmlife-to-review-2026-07-30.md`）：
+从旧双后端工作版 cherry-pick 合并而来，单后端架构未动（交付报告见仓库 `deliverables/gstack/merge-dmlife-to-review-2026-07-30.md`）：
 
 ### 引导与品牌（Auth 改版）
 - **启动页品牌**：联机前端启动页标题改为「人生管理系统」，不再显示「家庭协作 / DM Life · 联机版」（`packages/web-collab/src/components/AuthScreen.tsx`）。
@@ -65,15 +64,12 @@
 | 包 | 作用 |
 |---|---|
 | `packages/shared` | 跨包契约：Zod schema、事件信封类型、feature flags |
-| `packages/engine` | **桌面单机引擎**：仅 `apps/desktop`（Tauri 壳）使用。tRPC v11 + Drizzle + **sql.js（纯 WASM SQLite，免编译）** + SSE |
-| `packages/server` | **统一后端（联机版唯一后端）**：tRPC v11 + Drizzle + **PGlite（文件型，免外部数据库）/ 可选真实 Postgres** + WebSocket 实时网关。个人域（任务/财务/笔记/灵感/提醒/心流/领域…）与家庭共享域均在此一处提供 |
-| `packages/web`（已归档 → `archived/web`） | 旧桌面单机前端，功能已 100% 并入 `web-collab`，不再维护 |
+| `packages/server` | **统一后端（单后端 All-in-One 唯一后端）**：tRPC v11 + Drizzle + **PGlite（文件型，免外部数据库）/ 可选真实 Postgres** + WebSocket 实时网关。个人域（任务/财务/笔记/灵感/提醒/心流/领域…）与家庭共享域均在此一处提供 |
 | `packages/web-collab` | 联机前端（Web + 移动 PWA 共用一份静态包），**只连 `server`** |
-| `apps/desktop` | Tauri 2 桌面壳（骨架，原生构建延期） |
 
-> **架构收敛（本次迁移）**：联机版原本是「web-collab + engine + server」双后端，现已**合并为单一后端 `server`**——
+> **架构收敛（ADR-006 单后端）**：原「web-collab + engine + server」双后端已**合并为单一后端 `server`**——
 > 注册即自动创建「个人家庭（`kind='personal'`）」，所有个人域过程经 `store.getPersonalFamilyId(ctx.userId)` 按用户隔离；
-> 共享域（日历/共享账本/共享项）走「共享家庭（`kind='shared'`）」的成员 + RBAC 模型。`engine` 进程不再参与联机部署，仅保留给桌面单机壳。
+> 共享域（日历/共享账本/共享项）走「共享家庭（`kind='shared'`）」的成员 + RBAC 模型。旧的独立后端 `packages/engine` 与桌面壳 `apps/desktop`（Tauri）已被**移除**，不属于最终架构。
 
 **架构闭环（单一写路径 + 事件驱动）**
 
@@ -111,21 +107,18 @@ npm run dev -w @dm-life/web-collab
 > 因此无论是本机 Vite 代理、还是下面第 4 节的 Caddy 反代，都无需改动任何环境变量。
 > 仅当你要把前端指向一个**独立部署**的协作服务时，才需要设 `VITE_SERVER_URL`。
 
-> 桌面单机模式（engine，由 `apps/desktop` Tauri 壳加载）仍属架构一部分，但与联机版 server 互不耦合（`packages/web` 已归档，个人/协作统一走 `web-collab`）。
-
 ---
 
 ## 3. 测试与质量
 
 ```bash
-npm run test -w @dm-life/engine        # vitest：桌面单机引擎（仅 Tauri 壳使用）
 npm run test -w @dm-life/server        # vitest：安全/隔离全量测试（注册/家庭/邀请/RBAC/个人域隔离/多用户 E2E/版本接口/删号/跨用户隔离/zone 隔离，详见 packages/server/src/__tests__）
 npm run build -w @dm-life/web-collab   # vite build 通过（PWA 静态包，已切到单一后端 server）
 ```
 
-类型检查：`tsc --noEmit -p packages/{engine,server,web-collab}/tsconfig.json` 均 0 错误。
+类型检查：`tsc --noEmit -p packages/{server,web-collab}/tsconfig.json` 均 0 错误。
 
-> 个人域（任务/财务/笔记/灵感/提醒/心流/领域/项目/知识库…）已从 engine 整体迁移到 server，并新增
+> 个人域（任务/财务/笔记/灵感/提醒/心流/领域/项目/知识库…）已从旧 engine 整体迁移到 server，并新增
 > `multi-user-e2e.test.ts` 验证：双用户数据隔离、结构 IDOR 防护、家庭生命周期与角色链、越权边界。
 
 ---
@@ -140,19 +133,17 @@ npm run build -w @dm-life/web-collab   # vite build 通过（PWA 静态包，已
 
 ```
 docker-compose.simple.yml   # 编排（推荐）：单后端 all-in-one —— server + web-collab + Caddy（本地构建）
-caddy.auto.conf             # 反代配置（/trpc、/ws、/health → server；其余 → 前端）
+docker-compose.fnos.yml     # 编排（fnOS / 任意 Docker 主机）：直接拉取 GHCR 钉固镜像，免 git、免编译
+caddy.auto.conf             # all-in-one 镜像内置的反代配置（/trpc、/ws、/health → server；其余 → 前端）
 Dockerfile.allinone         # 单镜像：构建 server + web-collab，由 apps/allinone/index.mjs 拉起
-apps/allinone/index.mjs     # all-in-one 启动入口
-docker-compose.yml          # 旧版 4 服务编排（含 engine）；仅当你还要跑桌面单机 engine 时才用，联机版无需它
-Caddyfile                   # 旧版反代（含 /engine 转发）；同上的遗留配置
+apps/allinone/index.mjs     # all-in-one 启动入口（拉起 server + 内置 caddy）
 .dockerignore
 .github/workflows/publish.yml  # 推送 main 时自动构建并发布单一镜像 dm-life:latest 到 GHCR（包默认私有）
-packages/server/Dockerfile
-packages/web-collab/Dockerfile
-packages/web-collab/nginx.conf
-scripts/nas/backup.sh      # 打包 ./data 增量备份
-scripts/nas/upgrade.sh     # 拉源码→备份→重建→滚动重启
+scripts/nas/backup.sh      # 打包 ./data 单一数据卷增量备份
 ```
+
+> 最终架构只有**一个**数据卷（`./data`，容器内 `/data`）。旧的 `docker-compose.yml`/`Caddyfile`/`caddy.conf`（双后端反代）
+> 与 `packages/engine`、`apps/desktop`（Tauri 壳）已**移除**；all-in-one 镜像内置 caddy，无需单独的 Caddyfile。
 
 ### 4.1 前置条件
 
@@ -171,7 +162,7 @@ scripts/nas/upgrade.sh     # 拉源码→备份→重建→滚动重启
 git clone <你的仓库地址> dm-life
 cd dm-life
 ```
-升级时一条 `git pull` 即可。对应 `docker-compose.yml`（`docker compose up -d --build` 本地构建）。
+升级时一条 `git pull` 即可。对应 `docker-compose.simple.yml`（`docker compose up -d --build` 本地构建）。
 
 **方式二 · 免 git 直接拉镜像（推荐家庭 NAS / fnOS，见 4.10）**
 完全不碰源码：镜像已由 GitHub Actions 自动构建并发布到 GHCR（包**默认私有，禁止翻 Public**；私有包用带 `read:packages` 的 PAT 登录即可拉取），你只需在 fnOS 粘贴一份 compose 即可拉取运行，详见 [4.10](#410-fnos--任意-docker-主机免-git-直接拉镜像)。对应 `docker-compose.fnos.yml`。
@@ -181,44 +172,24 @@ cd dm-life
 
 ### 4.3 配置域名 / 网络（三选一）
 
-打开 `docker-compose.yml`，找到 `caddy` 服务的环境变量，把 `DOMAIN` 改成你的地址；并编辑 `Caddyfile` 顶部 `email` 改成你的邮箱（仅用于申请证书）。
+all-in-one 镜像**内置 caddy**（`caddy.auto.conf`），对外统一暴露 `:8080`，无需单独的 `Caddyfile`。
+默认 HTTP（适配 Tailscale / 局域网）即开即用；需要浏览器绿锁时启用内置的 HTTPS 变体
+（见 `caddy.auto.conf` 末尾注释：先 `tailscale cert 机器名.ts.net` 生成证书，再把 `:8080` 站点块
+替换为域名站点块并带上 `tls` 证书路径，然后重新构建镜像）。
 
 #### 方案 A · 公网域名（最标准，需能改 DNS）
-```yaml
-# docker-compose.yml → caddy.environment
-- DOMAIN=dm.yourdomain.com
-```
-```Caddyfile
-email you@example.com
-```
-再把 `dm.yourdomain.com` 的 A 记录指向你家公网 IP，并在路由器转发 **80/443** 到 NAS。
+把镜像内 caddy 的站点块改为你的域名（重建镜像，或在启动后挂载覆盖 `/etc/caddy/Caddyfile`），
 Caddy 会自动申请并续期 Let's Encrypt 证书，访问 `https://dm.yourdomain.com`。
+再把 `dm.yourdomain.com` 的 A 记录指向你家公网 IP，并在路由器转发 **80/443** 到 NAS（compose 的 `8080:8080` 映射改为对应端口）。
 
 #### 方案 B · Tailscale（推荐家庭 NAS，免公网 IP / 免改路由器）
-NAS 和你的每台设备都安装 Tailscale、登录同一账号。把 `DOMAIN` 设为你的 Tailscale 机器名：
-```yaml
-- DOMAIN=my-nas.ts.net
-```
+NAS 和你的每台设备都安装 Tailscale、登录同一账号，用机器名（如 `my-nas.ts.net`）访问。
 由于 `*.ts.net` 不是公开可签发证书的域名，让 Caddy 用**自签名证书**即可（隧道本身已由 Tailscale 加密）：
-在 `Caddyfile` 的站点块内第一行加 `tls internal`：
-```Caddyfile
-my-nas.ts.net {
-  tls internal
-  encode zstd gzip
-  ...
-}
-```
-访问 `https://my-nas.ts.net`（首次浏览器/手机对自签名证书点一次「继续」即可）。
+在内置 caddy 配置站点块内加 `tls internal`，然后重建镜像。访问 `https://my-nas.ts.net`（首次浏览器/手机对自签名证书点一次「继续」即可）。
 
 #### 方案 C · 仅局域网（最简，家人都在同一 WiFi）
-不需要证书，直接走 HTTP：
-```yaml
-# docker-compose.yml → caddy.ports 改为只暴露 80，或映射到别的宿主端口
-ports:
-  - "8080:80"
-```
-访问 `http://<NAS 内网 IP>:8080`。
-> 注意：PWA「添加到主屏幕」需要 HTTPS。若想手机装成 App，请用方案 B（Tailscale + `tls internal`）。
+不需要证书，直接走 HTTP（默认形态）：访问 `http://<NAS 内网 IP>:8080`。
+> 注意：PWA「添加到主屏幕」需要 HTTPS。若想手机装成 App，请用方案 B（Tailscale + 自签名证书）。
 
 ### 4.4 首次启动
 
@@ -288,8 +259,8 @@ dm-life/
 └── scripts/nas/{backup,upgrade}.sh
 ```
 
-`data/` 通过 `docker-compose.simple.yml` 的 `volumes: ./data/server:/data` 挂载进容器，
-镜像重建、容器删除都不会触碰它。桌面单机模式（engine）的数据不在此列。
+`data/` 通过 `docker-compose.simple.yml` / `docker-compose.fnos.yml` 的 `volumes: ./data:/data` 挂载进容器，
+镜像重建、容器删除都不会触碰它。最终架构只有一个数据卷（server 的 PGlite 库 + 自动密钥均落于此）。
 
 ### 4.9 故障排查
 
@@ -298,7 +269,7 @@ dm-life/
 | 页面打不开 | `docker compose -f docker-compose.simple.yml ps` 看 `frontend`/`caddy` 是否 Up；`docker compose logs -f caddy` |
 | 添加任务无反应 | 后端健康：`curl http://<域名>/health`（就绪返回 `200 {status:"ok"}`，预热中返回 `503`）；`docker compose logs -f server` |
 | 协作功能连不上 | 后端健康：`curl http://<域名>/health`；`docker compose logs -f server` |
-| 端口 80/443 被占 | 改 `docker-compose.yml` 里 `caddy.ports` 为 `"8080:80" "8443:443"`，Caddyfile 无需改 |
+| 端口 8080 被占 | 改 compose 里 `ports` 为其它宿主端口（如 `"8090:8080"`），或停掉占用 8080 的服务 |
 | 证书报错 | 公网域名检查 DNS/端口转发；Tailscale/局域网改用 `tls internal` |
 | 数据疑似丢失 | 确认没误删 `./data` 目录；从 `backups/` 恢复 |
 
@@ -332,36 +303,12 @@ ghcr.io/dreamlark/dm-life:sha-<commit>   # 单镜像 all-in-one：server + web-c
 4. 把 `docker-compose.fnos.yml` 里单个 `image:` 的 `sha-REPLACE_ME` 改成你实际部署的 `:sha-<commit>`（在 GHCR 包页面的标签列表查看）。
 5. 创建项目并启动。fnOS 会按 `image:` 直接从 GHCR 拉取该钉固标签的 all-in-one 镜像。
 
-> 只有 `Caddyfile`、`.env` 与 compose 文件需要你手动放到 NAS。其余全是拉取的镜像，没有源码。
+> 只有 `.env` 与 compose 文件需要你手动放到 NAS。其余全是拉取的镜像（含内置 caddy 与前端），没有源码。
 
-**Caddyfile 片段（如未下载，可新建同名文件）**
-
-```Caddyfile
-{
-  email admin@<你的域名>
-}
-
-<你的域名> {
-  encode zstd gzip
-  handle /trpc* {
-    reverse_proxy server:4100
-  }
-  handle /api/* {
-    reverse_proxy server:4100
-  }
-  handle /health* /ready* {
-    reverse_proxy server:4100
-  }
-  handle /ws* {
-    reverse_proxy server:4100
-  }
-  handle {
-    reverse_proxy frontend:80
-  }
-}
-```
-
-> Tailscale / 局域网用户：在站点块首行加 `tls internal`（见 4.3 方案 B/C），并把 `<你的域名>` 换成 `my-nas.ts.net` 或改用 HTTP 端口。
+**HTTPS（可选，已内置 caddy 的自动证书变体）**：all-in-one 镜像的 `caddy.auto.conf` 末尾已注释好 HTTPS 站点块
+（见 `caddy.auto.conf` L43-54）。启用方式：先 `tailscale cert 机器名.ts.net` 生成证书，把 `:8080` 块替换为域名
+站点块并带上 `tls` 证书路径，重新构建镜像（或挂载覆盖 `/etc/caddy/Caddyfile`）。默认 HTTP 形态（Tailscale / 局域网）
+无需任何改动即可使用。
 
 **升级**：`publish.yml` 会为每个 commit 推送不可变的 `:sha-<commit>` 镜像。升级时把 compose 里的 sha 标签改成新 commit，执行 `docker compose up -d` 即可；或用 `scripts/nas/upgrade.sh`。**不要**用 watchtower 自动拉取 `latest`。数据卷 `./data` 不参与镜像，安全不变。
 
@@ -403,10 +350,10 @@ P3 已落地**完整的后端契约与写路径**，作为后续「金额互转/
 
 ## 7. 已知坑与注意事项
 
-1. **（桌面单机引擎）sql.js 免编译**：Windows 沙箱无法编译 better-sqlite3，桌面引擎切纯 WASM `sql.js` + `drizzle-orm/sql-js`；落盘由引擎 `saveDb()` 保证。联机版 `server` 用 PGlite/Postgres，与此无关。
+1. **（联机后端）PGlite 文件型数据库**：`server` 默认用 PGlite（纯文件，免外部数据库）；可用 `DATABASE_URL` 指向真实 Postgres 切换为生产库。数据落在 `./data`（容器内 `/data`）。
 2. **tRPC v11 输入格式**：无 transformer 时 batch body 为「按下标编号的对象」`{"0":{...}}`，**不是** `[{json:{...}}]`（那是数组写法，会被判为非法）。联机版 `server` 与此一致。
-3. **实时通道用 WebSocket（`/ws`）**：联机版实时刷新走 `server` 的 WebSocket 网关（前端 `useEventStreamLocal` 订阅），不再是 engine 的 SSE `/events`。
-4. **（桌面单机引擎）端口自动协商**：桌面引擎容器内固定 14570；本机开发若被占用会 +1 到 14571+ 并写端口文件。联机版 `server` 固定 4100（可用 `PORT` 覆盖）。
+3. **实时通道用 WebSocket（`/ws`）**：联机版实时刷新走 `server` 的 WebSocket 网关（前端 `useEventStreamLocal` 订阅）。
+4. **后端端口**：`server` 固定 4100（可用 `PORT` 覆盖）；all-in-one 镜像经内置 caddy 对外暴露 8080。本机开发（server:4100 + web-collab:5173）用 `npm run dev` 一键拉起。
 5. **Docker daemon 不可达的沙箱**：本仓库是在代码层（vitest + tsc + vite build）充分验证的；镜像构建/compose 实测需在你自己的 NAS 上执行 `docker compose up -d --build`（YAML/bash 已通过语法校验）。
 6. **`npm ci` 需要 `package-lock.json`**：仓库已包含，切勿在部署前删除。
 
@@ -415,9 +362,9 @@ P3 已落地**完整的后端契约与写路径**，作为后续「金额互转/
 ## 8. 延期项
 
 - **P4 转账前端 UI**：把 `transfer` feature flag 翻为 `true` 灰度开放（后端已就绪）。
-- **Tauri 原生构建**：`tauri dev` / `tauri build`（需 Rust 工具链 + WebView2）。当前移动端走 PWA 已可用。
+- **Tauri 原生构建（已移除）**：原 `apps/desktop` Tauri 壳已从最终架构移除；移动端走 PWA 已可用，无需原生壳。
 - **知识库 embedder 热替换**：可换神经网络模型（transformers.js / 外部 API），检索链路无需改动。
-- **旧双后端工作版已归档至 `D:\DMYY\DM_Life\archive\dm-life`**（2026-07-31 走查无误后归档，源码保留可回溯）。
+- **旧双后端工作版已归档**：旧 engine/server 双后端实现保留在仓库 `archived/` 与 `docs/archive/` 下可回溯。
 - **M3+**：笔记相册 / 账本可视化 / 离线更深度的 PWA。
 
 ---

@@ -38,7 +38,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends caddy \
  && rm -rf /var/lib/apt/lists/*
 
-# 依赖与源码（engine/server 经 tsx 运行源码，需完整 workspace）
+# 依赖与源码（server 经 tsx 运行源码，需完整 workspace）
 COPY package.json tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps

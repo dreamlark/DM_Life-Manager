@@ -1,6 +1,6 @@
 name: Publish Images to GHCR
 
-# 单后端架构：每次推送到 redesign/streamlined 时，自动把 All-in-One 单镜像
+# 单后端架构：每次推送到 main 时，自动把 All-in-One 单镜像
 # （统一后端 server + 前端 web-collab + caddy，零必填配置）构建并推送到
 # GitHub Container Registry（ghcr.io/dreamlark/dm-life），且自动设为公开，
 # 以便家庭 NAS（fnOS 等）无需 git、无需编译，直接匿名拉取运行。
@@ -11,7 +11,7 @@ name: Publish Images to GHCR
 # 镜像标签以不可变的 :sha-<sha> 为准（可复现）；:latest 仅作“始终为绿”的便利镜像。
 on:
   push:
-    branches: [redesign/streamlined]
+    branches: [main]
     paths:
       - 'packages/**'
       - 'apps/**'
@@ -21,6 +21,7 @@ on:
       - 'docker-entrypoint.sh'
       - 'Dockerfile.allinone'
       - '.github/workflows/publish.yml'
+      - 'package-lock.json'
   workflow_dispatch: {}
 
 permissions:
@@ -43,9 +44,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Vitest — engine
-        run: npm run test -w packages/engine
 
       - name: Vitest — server
         run: npm run test -w packages/server
@@ -78,7 +76,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # 单镜像 All-in-One：含统一后端(server) + 前端(web-collab) + caddy。
-      # 对应 docs/redesign/ 最终方案 P1 的单后端化改造。
+      # 对应 docs/archive/redesign/ 最终方案 P1 的单后端化改造。
       # 标签：sha-<sha> 不可变（推荐按此固定版本以保证可复现）；latest 为“始终为绿”的便利镜像。
       - name: Build & push all-in-one
         uses: docker/build-push-action@v6
