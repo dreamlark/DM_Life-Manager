@@ -33,6 +33,8 @@ data/
 # ===== 临时与调试产物 =====
 .workbuddy/
 *.log
+# npm 临时缓存（本地 install 失败残留，非源码，严禁入库）
+.npm-tmp-cache/
 
 # ===== 验证截图（非源码资源） =====
 *.png

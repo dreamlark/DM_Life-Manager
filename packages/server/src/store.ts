@@ -179,25 +179,34 @@ function toSharedItem(r: any): SharedItem {
 
 /* ============================================================================
  * P1 zone 化：zone 过滤助手
- * 双写过渡期：familyId 列保留（= 调用者的 personal family），zone 读 = 本人私区(familyId)
- *   或 visibility='public' 的公区行；写（按 id）同样作用域。该 familyId 代理等价于
- *   ownerId=调用者（personal family 的 owner 即该用户），且兼容迁移期旧 familyId 兜底。
- * TODO(P1→P1final / 迁移 D.6 删 familyId 列之前必须完成): 将 resolveZone 及全部 list/update/delete
- *   谓词由 familyId 代理切换为 ownerId=ctx.userId（即 (ownerId=me OR visibility='public')）。过渡期因
- *   personal family 的 owner==该用户且双写 familyId，二者语义等价；一旦删除 familyId 列而谓词仍依赖
- *   familyId，私区隔离将失效。切换完成后本过渡注释与 getFamilyOwner 兜底可移除。
+ * 双写过渡期：familyId 列保留（= 调用者的 personal family），zone 读 = 本人私区(familyId)。
+ *   该 familyId 代理等价于 ownerId=调用者（personal family 的 owner 即该用户），兼容迁移期旧 familyId 兜底。
+ *
+ * SECURITY CLOSURE (迁移 D.6 — 安全部分已落地): resolveZone 现在是严格的 familyId=me 过滤，
+ *   即 personal-family 的 owner==该用户，语义等价于 ownerId=me，跨租户读取被彻底消除。
+ *   原 (familyId=me OR visibility='public') 中的全局 `visibility='public'` 读分支已【移除】：
+ *   在单后端多租户部署下，该分支使每个租户的个人行对所有其他租户可读（读泄漏）。跨用户共享改由
+ *   sharedItems / sharedFinanceItems 表经显式 allowedUserIds + RBAC 处理，不再走全局 public 读。
+ *
+ * OUT OF SCOPE (本 PR 不含): 原 D.6 的另一半——机械式 familyId→ownerId 列切换，已推迟到更宽泛的
+ *   「删除 familyId 列」迁移中统一处理。安全不变量（严格租户隔离、无跨租户读）现已满足，故该列切换
+ *   可独立排期，不影响安全收敛。切换完成后本过渡注释与 getFamilyOwner 兜底可移除。
  * ========================================================================== */
 
 /**
- * 返回 zone 作用域 WHERE 条件：(familyId = me OR visibility = 'public')。
- * 说明（评审 F3 复核）：`public` 分支是 ISSUE-002 受信编辑跨家庭共享的**既定特性**，非脆弱不变量——
- * 个人域实体被 owner 显式置为 public 后，对他人家庭可见（读），但跨家庭写必须经 bumpVersionAndEdit
- * 的「rowFamilyId !== familyId → 需该家庭 membership 否则 FORBIDDEN」护栏拦截，故无越权改/删泄漏。
- * 全部 personal 写路径默认 visibility='private'（无 UI 入口产 public），泄漏面仅限 owner 主动发布。
+ * 返回 zone 作用域 WHERE 条件：严格 familyId=me（personal-family 的 owner==该用户，语义等价于 ownerId=me）。
+ * 安全收敛（迁移 D.6）：原 `OR visibility='public'` 全局读分支已移除。单后端多租户下，全局 public 读会让
+ * 任一租户的个人行对所有其他租户可读（读泄漏），现已杜绝。跨用户共享不再经由全局 public 读，而是走
+ * sharedItems / sharedFinanceItems 表，由显式 allowedUserIds + RBAC 控制；这些表有独立的查询入口，
+ * 不经过本 resolveZone。若 id 不在调用者 familyId 作用域内，bumpVersionAndEdit 会抛 NOT_FOUND。
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function resolveZone(table: any, meFamilyId: string) {
-  return or(eq(table.familyId, meFamilyId), eq(table.visibility, 'public'));
+  // Security hardening (migration D.6 — security closure): strict tenant isolation.
+  // The legacy global `visibility='public'` read branch is removed: in single-backend multi-tenant
+  // it made every tenant's personal rows readable by all other tenants (read-leak). Cross-user sharing
+  // is handled separately by the sharedItems / sharedFinanceItems tables with explicit allowedUserIds + RBAC.
+  return eq(table.familyId, meFamilyId);
 }
 
 /** 解析 personal family 的 owner（= 该用户），用于写入 ownerId / lastEditedBy */
@@ -238,6 +247,9 @@ async function bumpVersionAndEdit(
   // ISSUE-002 公区写权限（trusted-editor）：本行挂在其他家庭（visibility='public' 跨域可读），
   // 写入必须由该家庭的可信成员执行；否则禁止越权改写他人 public 行（IDOR）。
   // 本人私区/本人 public 行 rowFamilyId === familyId，跳过校验（调用者即 owner）。
+  // 注（迁移 D.6 严格 resolveZone 后）：由于 resolveZone 不再匹配跨 family 的外来行，读路径已不会返回
+  // 外来（cross-family）行——外来行编辑会在上方抛 NOT_FOUND（store.ts resolveZone 限定作用域）。
+  // 因此下方 rowFamilyId !== familyId 守卫现在仅作【防御性】保留（极少触发），逻辑保持原样不变。
   if (cur[0].rowFamilyId !== familyId) {
     const mem = await db
       .select({ id: memberships.id })
@@ -738,6 +750,7 @@ export const store = {
    * 注销账户（P1 zone 化版）—— 遵循 v3③：
    * - 吊销该用户全部会话；
    * - 该用户的「公开（visibility='public'）」行：改挂 SYSTEM_AUTHOR_ID 保留不删（避免悬空外键 / 丢失共享价值）；
+   *   注（迁移 D.6 严格 resolveZone 后）：这些改挂 SYSTEM 的 public 行对所有租户不可见（孤儿化但保留，无 FK 悬空），即隐私安全；
    * - 该用户的「私区（visibility='private'）」行：彻底删除（隐私清除）；
    * - 共享快照类（sharedFinanceItems/sharedItems）：按 personal 家庭删除；
    * - 移除该用户在所有家庭的成员关系；删除 personal 家庭行与用户行。

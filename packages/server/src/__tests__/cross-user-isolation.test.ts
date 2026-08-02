@@ -62,7 +62,7 @@ describe('跨用户隔离（评审 #6）', () => {
 });
 
 describe('deleteUserAccount public 改挂 SYSTEM_AUTHOR_ID（评审 #5）', () => {
-  it('A 的 public 任务在注销后改挂 SYSTEM_AUTHOR_ID 且仍对 B 可见', async () => {
+  it('A 的 public 任务在注销后改挂 SYSTEM_AUTHOR_ID 且对 B 不可见（严格隔离）', async () => {
     const a = await anon().auth.register({ email: 'a3@home.dev', name: 'A3', password: 'secret123' });
     const b = await anon().auth.register({ email: 'b3@home.dev', name: 'B3', password: 'secret123' });
     const pub = await asUser(a.user.id).tasks.create({ title: '公共任务', domainKey: 'work' });
@@ -85,9 +85,9 @@ describe('deleteUserAccount public 改挂 SYSTEM_AUTHOR_ID（评审 #5）', () =
     const remaining = await db.select().from(users);
     expect(remaining.find((u) => u.id === SYSTEM_AUTHOR_ID)).toBeDefined();
 
-    // B 仍能看到该 public 行（resolveZone 含 visibility='public'）
+    // 严格隔离下，注销后改挂 SYSTEM_FAMILY_ID 的 public 行对全租户不可见（隐私安全；行仍保留避免悬空外键）。
     const bAll = await asUser(b.user.id).tasks.all();
-    expect(bAll.find((t) => t.id === pub.id)).toBeDefined();
+    expect(bAll.find((t) => t.id === pub.id)).toBeUndefined();
   });
 });
 
