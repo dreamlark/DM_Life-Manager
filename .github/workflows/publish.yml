@@ -42,8 +42,13 @@ jobs:
           node-version: 20
           cache: npm
 
+      # 用 npm install 而非 npm ci：本仓库 package-lock.json 在 Windows 本机生成，
+      # 其 node_modules 段只记录了 win32 的 rollup 原生二进制，缺少 linux-x64-gnu。
+      # npm ci 严格按锁文件安装，会在 ubuntu 运行器上漏装 rollup 原生模块
+      # （npm/cli#4828），导致 vitest 启动报 Cannot find module @rollup/rollup-linux-x64-gnu。
+      # npm install 会按当前平台重新解析并补齐正确的原生二进制，自修复。
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Vitest — server
         run: npm run test -w packages/server

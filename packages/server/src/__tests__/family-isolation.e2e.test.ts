@@ -154,16 +154,16 @@ describe('D) [SECURITY FIXED] visibility=public 全局可读（已修复）+ ISS
     expect(row.familyId).not.toBe(bFamily); // 非 B 的家庭，却因 public 可读
   });
 
-  it('[ISSUE-002 护栏] 第三方 C 无法改写他人 public 行（FORBIDDEN）；owner A 仍可改（泄漏仅限读）', async () => {
+  it('[STRICT ISOLATION] 第三方 C 无法定位/改写他人 public 行（严格隔离 → NOT_FOUND）；owner A 仍可改', async () => {
     const a = await register('tw-a@home.dev');
     const task = await a.me.tasks.create({ title: 'A 原任务', domainKey: 'work' });
 
     const db = getDb();
     await db.update(tasks).set({ visibility: 'public' }).where(eq(tasks.id, task.id));
 
-    // C：与 A 无关的第三方用户。读虽泄漏（见上条），但跨家庭写必须经 ISSUE-002 护栏拦截。
+    // C：与 A 无关的第三方用户。读已不泄漏（见上条）：跨家庭行根本不在 C 的 zone，update 在 zone 解析阶段即抛 NOT_FOUND（store.ts:245，比 FORBIDDEN 更严），C 无从改写——ISSUE-002 安全目标（禁止跨家庭改写）由严格隔离达成。
     const c = await register('tw-c@home.dev');
-    await expect(c.me.tasks.update({ id: task.id, title: 'C 篡改的标题' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(c.me.tasks.update({ id: task.id, title: 'C 篡改的标题' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     // owner 本人仍可编辑自己的 public 行
     const res = await a.me.tasks.update({ id: task.id, title: 'A 改的标题' });
