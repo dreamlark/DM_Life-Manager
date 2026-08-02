@@ -69,6 +69,18 @@ export function FamilyBoard({ onLeft }: { onLeft: () => void }) {
     onLeft();
   }
 
+  async function disband() {
+    if (!currentFamilyId || !current) return;
+    if (!window.confirm('解散家庭将删除该家庭全部共享内容（日程 / 共享项 / 账本），且不可恢复。确定解散？')) return;
+    try {
+      await trpc.families.disband.mutate({ familyId: currentFamilyId });
+      resetFamily();
+      onLeft();
+    } catch (e) {
+      setFeedback(errMsg(e));
+    }
+  }
+
   async function removeMember(userId: string, name: string) {
     if (!currentFamilyId || !window.confirm(`将 ${name} 移出家庭？`)) return;
     setBusyId(userId);
@@ -154,13 +166,13 @@ export function FamilyBoard({ onLeft }: { onLeft: () => void }) {
         </div>
 
         <div className="board-head-right">
-          {families.length > 0 && (
+          {families.some((f) => f.kind === 'shared') && (
             <select
               className="family-switch"
               value={currentFamilyId ?? ''}
               onChange={(e) => switchFamily(e.target.value)}
             >
-              {families.map((f) => (
+              {families.filter((f) => f.kind === 'shared').map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
@@ -176,9 +188,16 @@ export function FamilyBoard({ onLeft }: { onLeft: () => void }) {
               ＋ 邀请成员
             </button>
           )}
-          <button className="btn-exit" type="button" onClick={leave} title="退出当前家庭">
-            ↩ 退出家庭
-          </button>
+          {current && current.kind === 'shared' && (
+            <button className="btn-exit" type="button" onClick={leave} title="退出当前家庭">
+              ↩ 退出家庭
+            </button>
+          )}
+          {current && current.kind === 'shared' && amOwner && (
+            <button className="btn-danger magnetic" type="button" onClick={disband} title="解散家庭（不可恢复）">
+              🗑 解散家庭
+            </button>
+          )}
         </div>
       </header>
 

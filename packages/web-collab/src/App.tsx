@@ -123,8 +123,9 @@ export default function App() {
     try {
       const list = await trpc.families.list.query();
       setFamilies(list);
-      if (list.length > 0) {
-        const cur = list[0]!;
+      // 个人空间是数据容器，不作为协作看板默认家庭；默认选中首个共享家庭
+      const cur = list.find((f) => f.kind === 'shared') ?? null;
+      if (cur) {
         const ms = await trpc.families.members.query({ familyId: cur.id });
         setMembers(ms);
       }
@@ -137,8 +138,8 @@ export default function App() {
   const onJoined = useCallback(async () => {
     const list = await trpc.families.list.query();
     setFamilies(list);
-    if (list.length > 0) {
-      const cur = list[0]!;
+    const cur = list.find((f) => f.kind === 'shared') ?? null;
+    if (cur) {
       const ms = await trpc.families.members.query({ familyId: cur.id });
       setMembers(ms);
     }

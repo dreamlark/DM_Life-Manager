@@ -287,24 +287,55 @@ export const appRouter = router({
       .input(z.object({ familyId: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         const m = await requireMembership(ctx, input.familyId);
+        const fam = await store.getFamily(input.familyId);
+        if (!fam) throw new TRPCError({ code: 'NOT_FOUND', message: '家庭不存在' });
+        // 个人空间是数据隔离容器，不可退出（仅可归档）；明确报错避免前端诱导点击退出必崩
+        if (fam.kind === 'personal') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '个人空间不可退出，如需隐藏请在设置中归档' });
+        }
+        // 共享家庭所有者：若已是唯一成员则直接解散；否则需先转让所有者或移除其他成员
         if (m.role === 'owner') {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: '家庭所有者不能直接离开，请先转让或解散' });
+          const members = await store.getMembershipsByFamily(input.familyId);
+          if (members.length <= 1) {
+            await store.disbandFamily(input.familyId);
+            publishEvent({ kind: 'family.disbanded', familyId: input.familyId, actorId: ctx.userId });
+            audit.logSecurityEvent('family.disband', { userId: ctx.userId, ip: ctx.ip, result: 'success', detail: { familyId: input.familyId, via: 'leave' } });
+            return { ok: true, disbanded: true };
+          }
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '你是家庭所有者，请先转让所有者或移除其他成员后再退出' });
         }
         await store.removeMembership(m.id);
         publishEvent({ kind: 'member.left', familyId: input.familyId, userId: ctx.userId, actorId: ctx.userId });
         return { ok: true };
       }),
 
-    /** 列出当前用户所属的全部家庭（含角色），供前端「家庭切换」使用 */
+    /** 解散共享家庭（仅所有者）：硬删其全部共享内容（日程/共享项/账本）与成员关系，不可恢复。 */
+    disband: authedProcedure
+      .input(z.object({ familyId: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const m = await requireMembership(ctx, input.familyId);
+        if (m.role !== 'owner') throw new TRPCError({ code: 'FORBIDDEN', message: '只有家庭所有者可以解散家庭' });
+        const fam = await store.getFamily(input.familyId);
+        if (!fam) throw new TRPCError({ code: 'NOT_FOUND', message: '家庭不存在' });
+        if (fam.kind !== 'shared') throw new TRPCError({ code: 'BAD_REQUEST', message: '个人空间不可解散' });
+        await store.disbandFamily(input.familyId);
+        publishEvent({ kind: 'family.disbanded', familyId: input.familyId, actorId: ctx.userId });
+        audit.logSecurityEvent('family.disband', { userId: ctx.userId, ip: ctx.ip, result: 'success', detail: { familyId: input.familyId } });
+        return { ok: true };
+      }),
+
+    /** 列出当前用户所属的全部家庭（含角色与 kind），供前端「家庭切换」使用 */
     list: authedProcedure.query(async ({ ctx }) => {
       const ms = await store.getMembershipsByUser(ctx.userId);
       const families = await Promise.all(
         ms.map(async (m) => {
           const f = await store.getFamily(m.familyId);
-          return f ? { id: f.id, name: f.name, ownerId: f.ownerId, role: m.role } : null;
+          return f ? { id: f.id, name: f.name, ownerId: f.ownerId, role: m.role, kind: (f.kind ?? 'personal') as 'personal' | 'shared' } : null;
         }),
       );
-      return families.filter((f): f is { id: string; name: string; ownerId: string; role: Role } => f !== null);
+      return families.filter(
+        (f): f is { id: string; name: string; ownerId: string; role: Role; kind: 'personal' | 'shared' } => f !== null,
+      );
     }),
 
     removeMember: authedProcedure

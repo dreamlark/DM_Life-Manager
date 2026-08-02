@@ -6,6 +6,7 @@ export interface FamilySummary {
   name: string;
   ownerId: string;
   role: Role;
+  kind: 'personal' | 'shared';
 }
 
 export interface MemberView {
@@ -33,10 +34,11 @@ export const useFamilyStore = create<FamilyState>((set) => ({
   setFamilies: (families) =>
     set((s) => ({
       families,
-      // 保持当前选择；若没有则默认第一个
-      currentFamilyId: s.currentFamilyId && families.some((f) => f.id === s.currentFamilyId)
-        ? s.currentFamilyId
-        : (families[0]?.id ?? null),
+      // 保持当前选择；若失效则默认选中首个「共享家庭」（个人空间是数据容器，不作为可切换的家庭）
+      currentFamilyId:
+        s.currentFamilyId && families.some((f) => f.id === s.currentFamilyId)
+          ? s.currentFamilyId
+          : (families.find((f) => f.kind === 'shared')?.id ?? null),
     })),
   setCurrent: (id) => set({ currentFamilyId: id }),
   setMembers: (members) => set({ members }),

@@ -11,6 +11,7 @@ export type RealtimeEvent =
   | { kind: 'member.left'; familyId: string; userId: string; actorId: string }
   | { kind: 'role.updated'; familyId: string; userId: string; role: string; actorId: string }
   | { kind: 'ownership.transferred'; familyId: string; from: string; to: string; actorId: string }
+  | { kind: 'family.disbanded'; familyId: string; actorId: string }
   // 共享任务（认领 / 指派 / 轮换）
   | { kind: 'task.created'; familyId: string; taskId: string; actorId: string }
   | { kind: 'task.claimed'; familyId: string; taskId: string; userId: string; actorId: string }

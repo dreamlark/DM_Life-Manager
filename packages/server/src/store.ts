@@ -701,6 +701,23 @@ export const store = {
     const db = getDb();
     await db.delete(memberships).where(eq(memberships.id, id));
   },
+
+  /**
+   * 解散共享家庭：仅用于 kind='shared' 的家庭（个人家庭由 getPersonalFamilyId 派生，永不解散）。
+   * 共享快照（sharedItems / sharedFinanceItems / calendarEvents）随家庭一并清除（它们本就归属该家庭）；
+   * 移除全部成员关系后删除家庭行。全部清理在一个事务内完成，任一步失败整体回滚，杜绝"半删"残留。
+   * 不使用 re-home：解散是 owner 主动行为，其共享内容对其它租户无意义，硬删更符合"解散"语义。
+   */
+  async disbandFamily(familyId: string): Promise<void> {
+    const db = getDb();
+    await db.transaction(async (tx: any) => {
+      await tx.delete(sharedItems).where(eq(sharedItems.familyId, familyId));
+      await tx.delete(sharedFinanceItems).where(eq(sharedFinanceItems.familyId, familyId));
+      await tx.delete(calendarEvents).where(eq(calendarEvents.familyId, familyId));
+      await tx.delete(memberships).where(eq(memberships.familyId, familyId));
+      await tx.delete(families).where(eq(families.id, familyId));
+    });
+  },
   async updateMembershipRole(id: string, role: Role): Promise<Membership> {
     const db = getDb();
     const [r] = await db

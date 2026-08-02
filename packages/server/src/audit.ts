@@ -11,7 +11,8 @@ export type SecurityAction =
   | 'auth.logoutAll'
   | 'account.delete'
   | 'role.update'
-  | 'ownership.transfer';
+  | 'ownership.transfer'
+  | 'family.disband';
 
 export interface SecurityEventMeta {
   userId?: string;

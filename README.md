@@ -262,6 +262,23 @@ dm-life/
 `data/` 通过 `docker-compose.simple.yml` / `docker-compose.fnos.yml` 的 `volumes: ./data:/data` 挂载进容器，
 镜像重建、容器删除都不会触碰它。最终架构只有一个数据卷（server 的 PGlite 库 + 自动密钥均落于此）。
 
+#### 自定义数据目录位置（改 NAS 上的存放路径）
+
+容器内数据目录**固定为 `/data`**，改不了（由 `apps/allinone/index.mjs` 的 `DM_LIFE_DATA_DIR || '/data'` 决定，并作为 `PGLITE_DIR` 传给 server；`db/index.ts` 见 `PGLITE_DIR` 即直接用）。你能改的只是「这个 `/data` 在 NAS 上落在哪个目录」——通过 compose 的卷映射决定。
+
+**改法**：编辑 compose 的 `volumes`，把左边换成 NAS 上的绝对路径，**容器内 `/data` 保持不变**：
+
+```yaml
+services:
+  dm-life:
+    volumes:
+      - /vol1/你的目录/dm-life-data:/data   # 左边换成你想放的 NAS 路径
+```
+
+- 若用 fnOS 的「容器 → 项目 / Compose」图形界面，在「装载路径 / 存储」一项把容器 `/data` 映射到 NAS 任意目录即可；若 UI 不暴露该映射，改用 SSH 进 NAS 在你想要的位置写 compose 再运行。
+- **换目录后旧数据不会自动搬过来**：先 `docker compose down` → 把旧 `./data` 内容拷到新目录 → 再 `docker compose up -d`，否则会是一个全新空库（原数据仍在旧目录）。
+- 开发机本地运行时，可用环境变量 `PGLITE_DIR`（或 `DATABASE_URL` 指向 Postgres、`~/.dm-life/config.json` 的 `pgliteDir`）覆盖，见第 2 节。
+
 ### 4.9 故障排查
 
 | 现象 | 排查 |
