@@ -61,6 +61,8 @@ jobs:
   publish:
     needs: verify
     runs-on: ubuntu-latest
+    env:
+      PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,10 +95,8 @@ jobs:
       # （dreamlark 组织成员账号、作用域 write:packages）翻转；该 PAT 缺失或
       # 缺作用域时本步以 continue-on-error 跳过，不阻断镜像发布。
       - name: Make package public (requires PACKAGES_PAT secret)
-        if: ${{ secrets.PACKAGES_PAT != '' }}
+        if: ${{ env.PACKAGES_PAT != '' }}
         continue-on-error: true
-        env:
-          PACKAGES_PAT: ${{ secrets.PACKAGES_PAT }}
         run: |
           echo "Flipping ghcr.io/dreamlark/dm-life visibility -> public"
           for i in 1 2 3 4 5; do
