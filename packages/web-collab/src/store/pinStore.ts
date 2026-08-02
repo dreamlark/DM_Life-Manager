@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import { pbkdf2 } from '@noble/hashes/pbkdf2';
+import { sha256 } from '@noble/hashes/sha2';
+import { gcm } from '@noble/ciphers/aes';
 
 /**
  * PIN 锁屏凭据库（替代失效的「记住我」）。
@@ -127,24 +130,70 @@ function fromB64(b64: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-async function deriveKey(pin: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  const material = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 150_000, hash: 'SHA-256' },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
+/**
+ * 当前运行上下文是否具备原生 Web Crypto（安全上下文 + crypto.subtle 可用）。
+ * 当以 http://局域网IP:8080 访问时 isSecureContext 为 false 且 crypto.subtle 为 undefined，
+ * 必须回落到纯 JS 加密实现，否则会在 importKey 处崩溃。
+ */
+export function hasWebCrypto(): boolean {
+  return !!globalThis.crypto?.subtle && globalThis.isSecureContext === true;
 }
 
-async function encryptCreds(pin: string, creds: PinCreds): Promise<VaultBlob> {
-  const salt = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(16))) as Uint8Array<ArrayBuffer>;
-  const iv = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(12))) as Uint8Array<ArrayBuffer>;
+/**
+ * 由 PIN + salt 派生对称密钥。
+ * - 安全上下文：走原生 crypto.subtle（importKey→deriveKey，PBKDF2 150000 迭代 / SHA-256 / AES-256-GCM），返回 CryptoKey。
+ * - HTTP 非安全上下文：走 @noble/hashes 的 PBKDF2（同参数：150000 迭代、dkLen 32、SHA-256），返回 32 字节 Uint8Array。
+ * 两后端字节兼容：派生结果均为 32 字节密钥，且下方 gcm 与 crypto.subtle 的 AES-GCM 均产出「密文‖16B 标签」，
+ * 因此 HTTPS 原生加密的 vault 可在 HTTP noble 下解锁，反之亦然。
+ */
+async function deriveKey(pin: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey | Uint8Array> {
+  const enc = new TextEncoder();
+  if (hasWebCrypto()) {
+    const material = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: 150_000, hash: 'SHA-256' },
+      material,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+  }
+  // 回落路径：返回原始 32 字节密钥（Uint8Array，明文驻留 JS 内存、extractable），
+  // 与原生路径的 CryptoKey(extractable=false, 不透明) 不同——XSS 或内存 dump 在回落路径下可读出该密钥。
+  // 在「个人 NAS + 可信局域网、仅保护静态凭据」威胁模型下属 Low/可接受，但两路径并非安全等价。
+  return pbkdf2(sha256, enc.encode(pin), salt, { c: 150_000, dkLen: 32 });
+}
+
+/**
+ * 对称加密封装。key 为 Uint8Array（noble 回落路径）时用纯 JS 的 gcm；为 CryptoKey（原生路径）时用 crypto.subtle。
+ * 两路径均返回「密文‖16B GCM 标签」的 Uint8Array，与 VaultBlob.ct 字段约定完全一致。
+ */
+async function symEncrypt(key: CryptoKey | Uint8Array, iv: Uint8Array<ArrayBuffer>, plaintext: string): Promise<Uint8Array> {
+  const data = new TextEncoder().encode(plaintext);
+  if (key instanceof Uint8Array) {
+    // @noble/ciphers/aes 的 gcm 即「带认证的 AES-GCM」（128-bit 尾部标签），非 CTR/ECB 等非认证模式。
+    return gcm(key, iv).encrypt(data);
+  }
+  const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  return new Uint8Array(buf);
+}
+
+/** 对称解密封装，对应 symEncrypt。输入「密文‖16B GCM 标签」，返回明文；标签校验失败（PIN 错误）抛错由调用方捕获。 */
+async function symDecrypt(key: CryptoKey | Uint8Array, iv: Uint8Array<ArrayBuffer>, ct: Uint8Array<ArrayBuffer>): Promise<string> {
+  if (key instanceof Uint8Array) {
+    // @noble/ciphers/aes 的 gcm 为「带认证的 AES-GCM」（128-bit 尾部标签），解密会校验标签；PIN 错误即标签校验失败抛错，非 CTR/ECB 等非认证模式。
+    const pt = gcm(key, iv).decrypt(ct);
+    return new TextDecoder().decode(pt);
+  }
+  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  return new TextDecoder().decode(buf);
+}
+
+export async function encryptCreds(pin: string, creds: PinCreds): Promise<VaultBlob> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(pin, salt);
-  const data = new TextEncoder().encode(JSON.stringify(creds));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  const ct = await symEncrypt(key, iv, JSON.stringify(creds));
   const validityMs = getPinValidityMs();
   const expiresAt =
     validityMs === 0 ? Number.MAX_SAFE_INTEGER : Date.now() + validityMs;
@@ -152,21 +201,17 @@ async function encryptCreds(pin: string, creds: PinCreds): Promise<VaultBlob> {
     v: 1,
     salt: toB64(salt),
     iv: toB64(iv),
-    ct: toB64(new Uint8Array(ct)),
+    ct: toB64(ct),
     // 写入时即附带过期时间，形成带有效期的“记住我”窗口
     expiresAt,
   };
 }
 
-async function decryptCreds(pin: string, blob: VaultBlob): Promise<PinCreds | null> {
+export async function decryptCreds(pin: string, blob: VaultBlob): Promise<PinCreds | null> {
   try {
     const key = await deriveKey(pin, fromB64(blob.salt));
-    const pt = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: fromB64(blob.iv) },
-      key,
-      fromB64(blob.ct),
-    );
-    return JSON.parse(new TextDecoder().decode(pt)) as PinCreds;
+    const pt = await symDecrypt(key, fromB64(blob.iv), fromB64(blob.ct));
+    return JSON.parse(pt) as PinCreds;
   } catch {
     return null;
   }
