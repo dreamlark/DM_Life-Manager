@@ -84,7 +84,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.PACKAGES_PAT != '' && secrets.PACKAGES_PAT || secrets.GITHUB_TOKEN }}
 
       # 单镜像 All-in-One：含统一后端(server) + 前端(web-collab) + caddy。
       # 对应 docs/archive/redesign/ 最终方案 P1 的单后端化改造。
