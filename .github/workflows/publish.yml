@@ -39,14 +39,18 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
-      # 用 npm install 而非 npm ci：本仓库 package-lock.json 在 Windows 本机生成，
-      # 其 node_modules 段只记录了 win32 的 rollup 原生二进制，缺少 linux-x64-gnu。
-      # npm ci 严格按锁文件安装，会在 ubuntu 运行器上漏装 rollup 原生模块
-      # （npm/cli#4828），导致 vitest 启动报 Cannot find module @rollup/rollup-linux-x64-gnu。
-      # npm install 会按当前平台重新解析并补齐正确的原生二进制，自修复。
+      # 本仓库 package-lock.json 在 Windows 本机生成，其 node_modules 段只记录了
+      # win32 的 rollup 原生二进制（@rollup/rollup-win32-x64-*），缺少 linux-x64-gnu。
+      # 仅 npm install 在 ubuntu 上仍可能因 npm/cli#4828 漏装该原生模块，导致 vitest
+      # 启动报 Cannot find module @rollup/rollup-linux-x64-gnu。
+      # 按 npm 官方建议 + Dockerfile.allinone 已验证的做法：先删除跨平台 lockfile，
+      # 再 npm install，让其在 Linux 上重新解析并写入正确的原生二进制，彻底自修复。
+      - name: Remove cross-platform lockfile (regenerate on CI platform)
+        run: rm -f package-lock.json
+
       - name: Install dependencies
         run: npm install
 
