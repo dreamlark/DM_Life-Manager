@@ -81,6 +81,8 @@ export const updateTaskSchema = z
     taskDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     /** 重复规则 */
     repeat: z.enum(TASK_REPEAT).optional(),
+    /** 每日例行实例的来源模板 id；取消例行（实例脱离模板/模板停更）时显式置 null */
+    sourceDailyId: z.string().nullable().optional(),
   })
   .refine((d) => Object.keys(d).length > 1, { message: '至少需要修改一个字段' });
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;

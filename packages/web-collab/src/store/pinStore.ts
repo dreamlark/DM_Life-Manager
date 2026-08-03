@@ -19,6 +19,14 @@ import { gcm } from '@noble/ciphers/aes';
 const VAULT_KEY = 'dm-pinvault';
 const LOCK_KEY = 'dm-pinlock';
 const VALIDITY_KEY = 'dm-pin-validity';
+/**
+ * 凭据库归属账户的指纹（sha256(salt‖小写邮箱) 的 base64）。
+ *
+ * 刻意独立于 VaultBlob 单独存一个 key：VaultBlob 的字段集是「字节级兼容」契约的一部分
+ * （pinStore.crypto.test.ts 断言其键集恒为 v/salt/iv/ct/expiresAt），新增字段会破坏兼容。
+ * 指纹只回答「本机这个 PIN 库属不属于当前登录的账户」，不参与也不影响任何加解密。
+ */
+const ACCT_KEY = 'dm-pinvault-acct';
 
 /** PIN 有效期预设选项（单位：毫秒）。0 表示「永久」。 */
 export const PIN_VALIDITY_OPTIONS = [
@@ -236,6 +244,48 @@ function readVault(): VaultBlob | null {
   }
 }
 
+/**
+ * 账户指纹：sha256(vault salt ‖ 小写邮箱) 的 base64。
+ * 用 noble 的 sha256（同步、不依赖 Web Crypto），HTTPS/HTTP 两种上下文行为完全一致。
+ * 盐取自当前 vault，故每次重新加密（换盐）后必须同步重算，见 setup/unlock/changePin。
+ */
+function accountFingerprint(saltB64: string, email: string): string {
+  const salt = fromB64(saltB64);
+  const mail = new TextEncoder().encode(email.trim().toLowerCase());
+  const buf = new Uint8Array(salt.length + mail.length);
+  buf.set(salt, 0);
+  buf.set(mail, salt.length);
+  return toB64(sha256(buf));
+}
+
+function readAcct(): string | null {
+  try {
+    return localStorage.getItem(ACCT_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeAcct(fp: string) {
+  try {
+    localStorage.setItem(ACCT_KEY, fp);
+  } catch {
+    /* 隐私模式忽略 */
+  }
+}
+function clearAcct() {
+  try {
+    localStorage.removeItem(ACCT_KEY);
+  } catch {
+    /* 隐私模式忽略 */
+  }
+}
+
+/** 依据凭据登记账户指纹：有邮箱则记，纯本地库（无邮箱）则清除，避免残留旧账户指纹。 */
+function stampAcct(saltB64: string, creds: PinCreds) {
+  if (creds.email) writeAcct(accountFingerprint(saltB64, creds.email));
+  else clearAcct();
+}
+
 /** 凭据库是否存在且未过期（可在 PIN 锁屏阶段凭 PIN 解锁）。 */
 export function hasValidVault(): boolean {
   const blob = readVault();
@@ -278,6 +328,14 @@ interface PinState {
   openSetup: (creds: PinCreds, rearm?: boolean) => void;
   cancelSetup: () => void;
   finalizeSetup: (pin: string) => Promise<void>;
+  /**
+   * 账号密码登录成功后续期本机 PIN 快捷登录窗口（不需要 PIN、不重新加密）。
+   * 返回：
+   * - 'rearmed'  本机已有属于该账户的 PIN 库，窗口已续期 → 直接进应用，不必再录 PIN
+   * - 'absent'   本机没有 PIN 库（首次在本机登录）→ 由调用方引导设置 PIN
+   * - 'mismatch' 本机 PIN 库属于其他账户 → 由调用方引导重设，把库改绑到当前账户
+   */
+  rearmForAccount: (email: string) => 'rearmed' | 'absent' | 'mismatch';
   /** 静默设置 PIN（不打开设置弹窗），用于注册时直接创建凭据库 */
   setup: (pin: string, creds: PinCreds) => Promise<void>;
   unlock: (pin: string) => Promise<PinCreds | null>;
@@ -311,7 +369,34 @@ export const usePinStore = create<PinState>((set, get) => ({
   setup: async (pin, creds) => {
     const blob = await encryptCreds(pin, creds);
     localStorage.setItem(VAULT_KEY, JSON.stringify(blob));
+    stampAcct(blob.salt, creds);
     set({ hasPin: true, locked: false, expired: false, setupOpen: false, pendingCreds: null, rearm: false });
+  },
+
+  // 密码登录已经是比 4 位 PIN 强得多的一次身份证明，因此「续期本地 PIN 窗口」无需再问 PIN。
+  // expiresAt 是 VaultBlob 的明文字段（不在 AES-GCM 密文内），改写它不触碰 salt/iv/ct 一个字节，
+  // 密文与 PIN 的绑定关系、加密强度均保持原样；它本来也只是本地 UX 窗口，不是安全边界
+  // （localStorage 可被本地改写，真正的访问控制在服务端 JWT）。
+  rearmForAccount: (email) => {
+    const blob = readVault();
+    if (!blob) return 'absent';
+    const fp = accountFingerprint(blob.salt, email);
+    const known = readAcct();
+    // 旧版库没有登记过指纹：视为同一账户（单人单机是压倒性常见场景），顺带补登记。
+    if (known && known !== fp) return 'mismatch';
+    const validityMs = getPinValidityMs();
+    const next: VaultBlob = {
+      ...blob,
+      expiresAt: validityMs === 0 ? Number.MAX_SAFE_INTEGER : Date.now() + validityMs,
+    };
+    try {
+      localStorage.setItem(VAULT_KEY, JSON.stringify(next));
+    } catch {
+      return 'absent';
+    }
+    writeAcct(fp);
+    set({ hasPin: true, locked: false, expired: false, setupOpen: false, pendingCreds: null, rearm: false });
+    return 'rearmed';
   },
 
   unlock: async (pin) => {
@@ -333,6 +418,8 @@ export const usePinStore = create<PinState>((set, get) => ({
     setLockUntil(0);
     const next = await encryptCreds(pin, creds);
     localStorage.setItem(VAULT_KEY, JSON.stringify(next));
+    // 重新加密换了新盐，指纹绑定的是盐，必须同步重算，否则下次密码登录会被误判成 'mismatch'
+    stampAcct(next.salt, creds);
     set({ locked: false, expired: false });
     return creds;
   },
@@ -344,11 +431,13 @@ export const usePinStore = create<PinState>((set, get) => ({
     if (!creds) return false;
     const next = await encryptCreds(newPin, creds);
     localStorage.setItem(VAULT_KEY, JSON.stringify(next));
+    stampAcct(next.salt, creds);
     return true;
   },
 
   removePin: () => {
     localStorage.removeItem(VAULT_KEY);
+    clearAcct();
     set({ hasPin: false, locked: false, expired: false, setupOpen: false, pendingCreds: null, rearm: false });
   },
 

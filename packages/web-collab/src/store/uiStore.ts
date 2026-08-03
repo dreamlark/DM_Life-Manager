@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_QUADRANT, type QuadrantKey } from '@dm-life/shared';
 import { todayStr } from '@dm-life/shared';
@@ -194,3 +195,29 @@ export const useUI = create<UIState>((set, get) => ({
     }),
   isTabEnabled: (tab) => get().enabledTabs[tab] !== false,
 }));
+
+/**
+ * 解析后的「当前是否深色」。
+ *
+ * uiStore.theme 是三态（dark/light/system），组件里直接写 `theme === 'dark'` 会漏掉
+ * 「跟随系统 + 系统偏好深色」这一档——而它恰恰是默认值（getInitialTheme 默认 'system'），
+ * 会导致非 Tailwind 驱动的第三方画布（如 mind-elixir）停留在浅色。
+ *
+ * 本 hook 与 applyTheme 共用 resolveIsDark，保证「<html>.dark 类」与组件读到的明暗完全一致；
+ * 跟随系统时订阅 media query，系统配色变化可实时重渲染。
+ */
+export function useIsDark(): boolean {
+  const theme = useUI((s) => s.theme);
+  const [systemDark, setSystemDark] = useState(getSystemPrefersDark);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => setSystemDark(mq.matches);
+    handler();
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  return theme === 'system' ? systemDark : theme === 'dark';
+}

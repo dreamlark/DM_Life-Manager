@@ -181,15 +181,17 @@ export default function App() {
     [setTokens, setUser, onAuthed, setView],
   );
 
-  // 忘记 PIN：清空凭据库；协作模式导向家庭登录视图（登录后会引导重设 PIN 落库家庭凭据），
-  // 个人模式由下方 setup 副作用自动重新引导设置 PIN，无需在此处理。
+  // 忘记 PIN：必须清空凭据库并回到账号密码登录。
+  // 修复：旧实现只清 token、既不 removePin 也不解除 locked，且个人模式连 setView('auth') 都不做 →
+  // AppLock 仍满足 locked=true 继续渲染锁屏，点「忘记 PIN？」界面毫无变化，用户被永久挡在
+  // PIN 门后，只能手工清 localStorage 才能重新登录（这正是用户被迫反复重设 PIN 的来源之一）。
+  // 凭据库里只有可由密码登录再生的本机凭据副本，不含任何用户数据，清除是安全且必要的。
   const onForgotPin = useCallback(() => {
+    usePinStore.getState().removePin();
     clearAuth();
     resetFamily();
-    if (useModeStore.getState().mode === 'collab') {
-      setFamilyOpen(true);
-      setView('auth');
-    }
+    setFamilyOpen(false);
+    setView('auth');
   }, [clearAuth, resetFamily, setFamilyOpen, setView]);
 
   async function logout() {

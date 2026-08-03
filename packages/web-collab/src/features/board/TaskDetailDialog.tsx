@@ -116,10 +116,12 @@ export function TaskDetailDialog() {
     const wasDaily = task.repeat === 'daily' || !!task.sourceDailyId;
     if (daily !== wasDaily) {
       if (daily) {
-        // 转为每日例行模板：taskDate 置空、解除任何旧的模板绑定
+        // 只声明「要变成每日例行」，具体迁移交给服务端 updateTask 原子完成：
+        // 原任务留在它原本的日期（继续可见），另建模板承载重复规则。
+        // 修复：此前客户端直接把 taskDate 置空、把原行就地变成模板，而按日查询会排除模板，
+        // 于是任务从原日期消失；sourceDailyId 又不在 updateTaskSchema 里被 zod 静默丢弃，
+        // 实例改例行还会退化成「既是模板又是实例」的脏数据。
         patch.repeat = 'daily';
-        patch.taskDate = null;
-        patch.sourceDailyId = null;
       } else {
         // 取消每日例行：变回普通单次任务（若为实例则脱离模板）
         patch.repeat = 'none';

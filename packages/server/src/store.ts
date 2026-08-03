@@ -1232,7 +1232,53 @@ export const store = {
     for (const [k, v] of Object.entries(rest)) {
       if (v !== undefined) set[k] = v;
     }
+
+    // —— 「改为每日例行」必须是非破坏性的 ——
+    // 症状：把某天的任务编辑为每日例行后，它从那一天（乃至所有列表）消失；直到新建另一个
+    // 例行任务触发 ensureDaily，之前消失的任务才作为「今天的实例」一起冒出来。
+    // 根因：例行模板的建模是 repeat='daily' + taskDate=null，而 listForDate 只查
+    // `repeat='none' AND (taskDate=当天 OR taskDate IS NULL)`；若就地把原行改成模板，
+    // 这一行会被整条查询排除 → 原日期上的任务凭空消失，且 LocalApp 的 ensuredRef 守卫
+    // 让同一 boardDate 不会再跑 ensureDaily，于是当天也生不出实例，任务彻底不可见。
+    // 正确做法：原行留在原日期继续作为「那一天的这次例行」，另建一条模板承载重复规则。
+    // 全程只新增行、不删除也不清空任何用户数据。
+    let spawnedTemplate: { anchorDate: string } | null = null;
+    if (set.repeat === 'daily') {
+      const prev = await store.getTask(familyId, id);
+      if (prev && prev.repeat !== 'daily') {
+        const anchorDate = (set.taskDate as string | null | undefined) ?? prev.taskDate ?? todayStr();
+        const now = new Date().toISOString();
+        const templateId = randomUUID();
+        const ownerId = await getFamilyOwner(familyId);
+        // 模板取「本次编辑后」的字段值，保证用户这次改的标题/领域等同步进重复规则
+        const merged = { ...prev, ...(set as Partial<TaskView>) };
+        await db.insert(tasks).values({
+          id: templateId, familyId, ownerId, visibility: 'private', version: 1, lastEditedBy: null,
+          title: merged.title, domainKey: merged.domainKey, projectId: merged.projectId ?? null,
+          importance: !!merged.importance, urgency: !!merged.urgency, isMit: false, mitOrder: null,
+          status: 'todo', scheduledStart: merged.scheduledStart ?? null, scheduledEnd: merged.scheduledEnd ?? null,
+          dueAt: null, description: merged.description ?? '', priority: merged.priority ?? 'medium',
+          taskDate: null, repeat: 'daily', sourceDailyId: null,
+          createdAt: now, updatedAt: now,
+        });
+        // 原行保持为「锚定日的普通任务」，仅挂到新模板下：
+        // 既不会从原日期消失，又能被 ensureDaily 认作该日已存在的实例而不重复生成。
+        set.repeat = 'none';
+        set.taskDate = anchorDate;
+        set.sourceDailyId = templateId;
+        spawnedTemplate = { anchorDate };
+      }
+    }
+
     const { conflict } = await bumpVersionAndEdit(tasks, id, familyId, set, expectedVersion);
+
+    // 锚定日在今天之前（用户常见操作：今天把昨天/前天的任务改成每日例行）时，
+    // 今天还没有这条例行的实例 → 立即补生成，让例行「从今天起每天可见」。
+    // 锚定日就是今天则原行已充当今天的实例；锚定日在未来则尊重用户的排期，不回灌今天。
+    if (spawnedTemplate && spawnedTemplate.anchorDate < todayStr()) {
+      await store.ensureDaily(familyId, todayStr());
+    }
+
     const view = (await store.getTask(familyId, id))!;
     return { ...view, conflict, latestData: view };
   },

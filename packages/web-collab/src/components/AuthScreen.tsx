@@ -21,8 +21,7 @@ export function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
   const setUser = useAuthStore((s) => s.setUser);
   const openSetup = usePinStore((s) => s.openSetup);
   const setup = usePinStore((s) => s.setup);
-  const hasPin = usePinStore((s) => s.hasPin);
-  const expired = usePinStore((s) => s.expired);
+  const rearmForAccount = usePinStore((s) => s.rearmForAccount);
 
   function switchMode(next: Mode) {
     setMode(next);
@@ -58,8 +57,12 @@ export function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
         const r = await trpc.auth.login.mutate({ email, password });
         setTokens(r.accessToken, r.refreshToken);
         setUser(r.user);
-        // 首次登录（无 PIN 库）或凭据过期（库存在但超期）→ 引导设置/重设 PIN。
-        if (!hasPin || expired) openSetup({ email, password }, hasPin);
+        // PIN 与账户绑定：本机已为「同一账户」设过 PIN 时，密码登录本身就是更强的身份证明，
+        // 只需续期本地快捷登录窗口即可直接进应用——绝不在密码登录成功后再强制录一遍 PIN。
+        // PIN 的唯一用途是「窗口有效期内重开应用/会话失效时免密快捷解锁」。
+        // 仅这两种情况才需要录入 PIN：本机从未设过（absent）、或本机的库属于别的账户（mismatch）。
+        const outcome = rearmForAccount(email);
+        if (outcome !== 'rearmed') openSetup({ email, password }, outcome === 'mismatch');
       }
       onAuthed();
     } catch (err) {

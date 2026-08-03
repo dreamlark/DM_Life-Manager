@@ -184,10 +184,10 @@ export function AppLock({ children, onUnlock, onForgotPin }: AppLockProps) {
       <div className="applock">
         <div className="applock-card glass">
           <FloatingIcon icon="🔐" tone="violet" size="lg" />
-          <h2>{rearm ? 'PIN 已过期，重新设置' : '设置 4 位 PIN'}</h2>
+          <h2>{rearm ? '重新设置 4 位 PIN' : '设置 4 位 PIN'}</h2>
           <p className="applock-sub">
             {rearm
-              ? '登录凭据已过期，请重新设置 4 位 PIN 以继续使用（凭据仍将经 PIN 加密保存在本机）。'
+              ? '本机已有的 PIN 属于另一个账户，请重新设置 4 位 PIN 绑定当前账户（凭据仍将经 PIN 加密保存在本机）。'
               : '用于锁屏后快速解锁，凭据将经 PIN 加密保存在本机。'}
           </p>
           <PinField value={pin} onChange={(v) => { setPin(v); setError(null); }} autoFocus />

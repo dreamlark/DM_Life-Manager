@@ -17,7 +17,8 @@ import { toast } from 'sonner';
 import MindElixir, { type MindElixirData, type MindElixirInstance } from 'mind-elixir';
 import { zh_CN } from 'mind-elixir/i18n';
 import 'mind-elixir/style.css';
-import { useUI } from '../../store/uiStore';
+import { useIsDark } from '../../store/uiStore';
+import { ME_LIGHT_THEME, ME_DARK_THEME, stripDataTheme } from './mindMapTheme';
 import {
   loadStore,
   createMap,
@@ -53,7 +54,7 @@ function formatTime(iso: string): string {
 }
 
 export function MindMapPage() {
-  const theme = useUI((s) => s.theme);
+  const isDark = useIsDark();
   const containerRef = useRef<HTMLDivElement>(null);
   const mindRef = useRef<MindElixirInstance | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,7 +80,7 @@ export function MindMapPage() {
     const mind = new MindElixir({
       el: containerRef.current,
       direction: MindElixir.SIDE,
-      theme: theme === 'dark' ? MindElixir.DARK_THEME : MindElixir.THEME,
+      theme: isDark ? ME_DARK_THEME : ME_LIGHT_THEME,
       editable: true,
       contextMenu: { locale: zh_CN },
       toolBar: true,
@@ -87,14 +88,16 @@ export function MindMapPage() {
     });
 
     const initial = storeRef.current.maps.find((m) => m.id === storeRef.current.activeId);
-    mind.init(initial?.data ?? storeRef.current.maps[0]!.data);
+    mind.init(stripDataTheme(initial?.data ?? storeRef.current.maps[0]!.data));
 
     // 任意编辑操作 → 防抖持久化到当前脑图
     mind.bus.addListener('operation', () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         try {
-          const data = mind.getData();
+          // getData() 会把当前 theme 一并序列化；若原样落库，下次 init/refresh 会用这份
+          // 旧主题覆盖实例主题（暗色下变白底）。持久化前统一剥离。
+          const data = stripDataTheme(mind.getData());
           const next = updateMap(storeRef.current, storeRef.current.activeId, { data });
           storeRef.current = next;
           setStore(next);
@@ -115,14 +118,15 @@ export function MindMapPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 主题切换：实时换肤，不重建实例
+  // 主题切换：实时换肤，不重建实例。
+  // 用 isDark（已解析 system 档）而非 theme === 'dark'，否则「跟随系统 + 系统深色」下画布仍是白底。
   useEffect(() => {
-    mindRef.current?.changeTheme(theme === 'dark' ? MindElixir.DARK_THEME : MindElixir.THEME);
-  }, [theme]);
+    mindRef.current?.changeTheme(isDark ? ME_DARK_THEME : ME_LIGHT_THEME);
+  }, [isDark]);
 
   const flushCurrent = (mind: MindElixirInstance) => {
     try {
-      const data = mind.getData();
+      const data = stripDataTheme(mind.getData());
       const next = updateMap(storeRef.current, storeRef.current.activeId, { data });
       storeRef.current = next;
       setStore(next);
@@ -140,7 +144,7 @@ export function MindMapPage() {
     storeRef.current = next;
     setStore(next);
     const target = next.maps.find((m) => m.id === id)!;
-    mind.refresh(target.data);
+    mind.refresh(stripDataTheme(target.data));
     setSavedAt('');
   };
 
@@ -154,7 +158,7 @@ export function MindMapPage() {
     storeRef.current = next;
     setStore(next);
     const target = next.maps.find((m) => m.id === next.activeId)!;
-    mind.refresh(target.data);
+    mind.refresh(stripDataTheme(target.data));
     toast.success('已创建新脑图');
   };
 
@@ -168,7 +172,7 @@ export function MindMapPage() {
     setStore(next);
     if (mind) {
       const target = next.maps.find((m) => m.id === next.activeId)!;
-      mind.refresh(target.data);
+      mind.refresh(stripDataTheme(target.data));
     }
     toast.success('已删除脑图');
   };
@@ -219,7 +223,9 @@ export function MindMapPage() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(String(reader.result)) as MindElixirData;
+        // 导入的 JSON 常带导出时烘焙的 theme（多为浅色），须剥离后再入库/渲染，
+        // 否则会覆盖当前主题、在暗色下出现白底画布。
+        const data = stripDataTheme(JSON.parse(String(reader.result)) as MindElixirData);
         const mind = mindRef.current;
         if (!mind) return;
         flushCurrent(mind);
