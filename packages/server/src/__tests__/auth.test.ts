@@ -81,10 +81,37 @@ describe('M2.1 鉴权 + 家庭 + RBAC', () => {
     expect(rotated.refreshToken).not.toBe(login.refreshToken);
   });
 
-  it('家庭所有者不能离开', async () => {
+  // 家庭生命周期改造后（ADR-006 redesign）：families.create 建的是 shared 家庭。
+  // owner 离开的语义按「是否还有其他成员」分流，以下两条分别覆盖两个分支。
+  it('家庭所有者不能离开（共享家庭仍有其他成员时）', async () => {
     const alice = await anon().auth.register({ email: 'a6@home.dev', name: 'Alice', password: 'secret123' });
     const family = await asUser(alice.user.id).families.create({ name: '杨家' });
-    await expect(asUser(alice.user.id).families.leave({ familyId: family.id })).rejects.toThrow(/不能直接离开|转让|解散/);
+    const bob = await anon().auth.register({ email: 'b6@home.dev', name: 'Bob', password: 'secret123' });
+    const inv = await asUser(alice.user.id).families.invite({ familyId: family.id, role: 'member' });
+    await asUser(bob.user.id).families.acceptInvite({ token: inv.token });
+
+    await expect(asUser(alice.user.id).families.leave({ familyId: family.id })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: expect.stringContaining('请先转让所有者'),
+    });
+
+    // 家庭与两名成员仍在（未解散、未退出）
+    const members = await asUser(alice.user.id).families.members({ familyId: family.id });
+    expect(members).toHaveLength(2);
+  });
+
+  it('家庭所有者是唯一成员时离开 → 自动解散', async () => {
+    const alice = await anon().auth.register({ email: 'a7@home.dev', name: 'Alice', password: 'secret123' });
+    const family = await asUser(alice.user.id).families.create({ name: '杨家' });
+
+    await expect(asUser(alice.user.id).families.leave({ familyId: family.id })).resolves.toMatchObject({
+      ok: true,
+      disbanded: true,
+    });
+
+    // 家庭已被解散，不再出现在家庭列表中
+    const list = await asUser(alice.user.id).families.list();
+    expect(list.find((f) => f.id === family.id)).toBeUndefined();
   });
 
   it('JWT 防伪（P0-1）：篡改签名的令牌被拒，合法令牌可解析', async () => {
